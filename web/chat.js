@@ -269,11 +269,31 @@ function routeLabel(d) {
   return parts.join(' · ');
 }
 
+// crypto.randomUUID() CHỈ tồn tại trong secure context (HTTPS hoặc localhost).
+// Máy dev chạy localhost nên không lộ, nhưng bản triển khai đầu tiên phục vụ
+// qua http://<IP>/ thì nó undefined và cả trang chat chết ngay dòng khởi tạo
+// (TypeError: crypto.randomUUID is not a function). getRandomValues thì vẫn
+// dùng được ngoài secure context — chỉ randomUUID và crypto.subtle mới bị chặn.
+function newSessionId() {
+  if (globalThis.crypto?.randomUUID) return crypto.randomUUID();
+
+  const bytes = new Uint8Array(16);
+  if (globalThis.crypto?.getRandomValues) {
+    crypto.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;   // phiên bản 4
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;   // biến thể RFC 4122
+  const hex = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 function initChat(config) {
   const form = document.getElementById('form');
   const input = document.getElementById('input');
   const send = document.getElementById('send');
-  const sessionId = crypto.randomUUID();
+  const sessionId = newSessionId();
   _previewHeaders = config.getHeaders;  // popup cần user id cho iframe preview
 
   showWelcome(config.welcome);
