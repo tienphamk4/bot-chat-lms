@@ -1,0 +1,7 @@
+code,name,faculty_id,credits,aliases
+INT1008,Cấu trúc dữ liệu và giải thuật,1,3,ctdl|dsa|cau truc du lieu
+INT2210,Cơ sở dữ liệu,1,3,csdl|database
+ECO1101,Kinh tế vi mô,3,3,vi mo|micro
+ENG1201,Tiếng Anh học thuật 1,3,2,ta1|english 1
+MAT1102,Đại số tuyến tính,2,3,dstt|linear algebra
+INT3115,Kiểm thử phần mềm,1,3,ktpm|kiem thu|software testing|testing|kiem thu pm

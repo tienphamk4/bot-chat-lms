@@ -1,0 +1,21 @@
+# /etc/systemd/system/edu-docbot-ingest.service
+# Oneshot — chạy bởi edu-docbot-ingest.timer, hoặc tay: systemctl start edu-docbot-ingest
+
+[Unit]
+Description=EDU-DOCBOT nạp tài liệu theo lô
+After=mariadb.service
+Wants=mariadb.service
+
+[Service]
+Type=oneshot
+User=docbot
+Group=docbot
+WorkingDirectory=/srv/edu-docbot/app
+EnvironmentFile=/srv/edu-docbot/.env
+ExecStart=/srv/edu-docbot/venv/bin/python -m ingest.cli scan
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/edu-docbot/files /srv/edu-docbot/logs

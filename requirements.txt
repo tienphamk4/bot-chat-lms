@@ -1,0 +1,32 @@
+# EDU-DOCBOT — giai đoạn 1
+# python -m venv venv && source venv/bin/activate && pip install -r requirements.txt
+
+# --- web ---
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.32
+python-multipart>=0.0.12        # upload tài liệu qua /admin/documents
+
+# --- cấu hình ---
+pydantic>=2.9
+pydantic-settings>=2.6
+
+# --- CSDL ---
+# Dùng SQLAlchemy Core (không ORM) + MariaDB dialect, đúng lựa chọn thứ hai
+# trong CLAUDE.md mục 2. Driver mặc định là PyMySQL vì thuần Python, không cần
+# libmariadb-dev khi cài. Muốn đổi sang driver chính thức thì cài
+# `mariadb` rồi đổi DB_DSN sang mysql+mariadbconnector://...
+sqlalchemy>=2.0,<3.0
+pymysql>=1.1
+cryptography>=42        # bắt buộc: MySQL 8.4/Cloud SQL xác thực caching_sha2_password
+
+# --- trích xuất tài liệu ---
+pymupdf>=1.24                   # .pdf
+python-docx>=1.1                # .docx
+python-pptx>=1.0                # .pptx
+
+# --- LLM qua Vertex AI ---
+google-genai>=1.0
+
+# --- kiểm thử ---
+pytest>=8.3
+httpx>=0.27

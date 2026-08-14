@@ -1,0 +1,344 @@
+[
+ {
+  "id": "L01",
+  "category": "lookup",
+  "pass": true,
+  "problems": [],
+  "branch": "metadata",
+  "router": "rule",
+  "latency_ms": 3229
+ },
+ {
+  "id": "L02",
+  "category": "lookup",
+  "pass": true,
+  "problems": [],
+  "branch": "metadata",
+  "router": "rule",
+  "latency_ms": 868
+ },
+ {
+  "id": "L03",
+  "category": "lookup",
+  "pass": true,
+  "problems": [],
+  "branch": "metadata",
+  "router": "llm",
+  "latency_ms": 2729
+ },
+ {
+  "id": "L04",
+  "category": "lookup",
+  "pass": true,
+  "problems": [],
+  "branch": "metadata",
+  "router": "rule",
+  "latency_ms": 859
+ },
+ {
+  "id": "L05",
+  "category": "lookup",
+  "pass": true,
+  "problems": [],
+  "branch": "metadata",
+  "router": "rule",
+  "latency_ms": 867
+ },
+ {
+  "id": "L06",
+  "category": "lookup",
+  "pass": true,
+  "problems": [],
+  "branch": "metadata",
+  "router": "rule",
+  "latency_ms": 864
+ },
+ {
+  "id": "L07",
+  "category": "lookup",
+  "pass": true,
+  "problems": [],
+  "branch": "metadata",
+  "router": "rule",
+  "latency_ms": 861
+ },
+ {
+  "id": "L08",
+  "category": "lookup",
+  "pass": true,
+  "problems": [],
+  "branch": "metadata",
+  "router": "rule",
+  "latency_ms": 861
+ },
+ {
+  "id": "L09",
+  "category": "lookup",
+  "pass": true,
+  "problems": [],
+  "branch": "fulltext",
+  "router": "rule",
+  "latency_ms": 1289
+ },
+ {
+  "id": "L10",
+  "category": "lookup",
+  "pass": true,
+  "problems": [],
+  "branch": "fulltext",
+  "router": "rule",
+  "latency_ms": 1295
+ },
+ {
+  "id": "C01",
+  "category": "content",
+  "pass": true,
+  "problems": [],
+  "branch": "rag",
+  "router": "rule",
+  "latency_ms": 4079
+ },
+ {
+  "id": "C02",
+  "category": "content",
+  "pass": true,
+  "problems": [],
+  "branch": "rag",
+  "router": "llm",
+  "latency_ms": 30604
+ },
+ {
+  "id": "C03",
+  "category": "content",
+  "pass": true,
+  "problems": [],
+  "branch": "rag",
+  "router": "llm",
+  "latency_ms": 4075
+ },
+ {
+  "id": "C04",
+  "category": "content",
+  "pass": true,
+  "problems": [],
+  "branch": "rag",
+  "router": "llm",
+  "latency_ms": 4525
+ },
+ {
+  "id": "C05",
+  "category": "content",
+  "pass": true,
+  "problems": [],
+  "branch": "content",
+  "router": "llm",
+  "latency_ms": 38166
+ },
+ {
+  "id": "C06",
+  "category": "content",
+  "pass": true,
+  "problems": [],
+  "branch": "rag",
+  "router": "llm",
+  "latency_ms": 4454
+ },
+ {
+  "id": "C07",
+  "category": "content",
+  "pass": true,
+  "problems": [],
+  "branch": "rag",
+  "router": "llm",
+  "latency_ms": 13909
+ },
+ {
+  "id": "C08",
+  "category": "content",
+  "pass": true,
+  "problems": [],
+  "branch": "rag",
+  "router": "rule",
+  "latency_ms": 4822
+ },
+ {
+  "id": "C09",
+  "category": "content",
+  "pass": true,
+  "problems": [],
+  "branch": "rag",
+  "router": "rule",
+  "latency_ms": 3183
+ },
+ {
+  "id": "C10",
+  "category": "content",
+  "pass": true,
+  "problems": [],
+  "branch": "rag",
+  "router": "rule",
+  "latency_ms": 7248
+ },
+ {
+  "id": "C11",
+  "category": "content",
+  "pass": true,
+  "problems": [],
+  "branch": "rag",
+  "router": "llm",
+  "latency_ms": 30895
+ },
+ {
+  "id": "C12",
+  "category": "content",
+  "pass": true,
+  "problems": [],
+  "branch": "rag",
+  "router": "llm",
+  "latency_ms": 5621
+ },
+ {
+  "id": "O01",
+  "category": "out_of_scope",
+  "pass": true,
+  "problems": [],
+  "branch": "static",
+  "router": "rule",
+  "latency_ms": 432
+ },
+ {
+  "id": "O02",
+  "category": "out_of_scope",
+  "pass": true,
+  "problems": [],
+  "branch": "static",
+  "router": "llm",
+  "latency_ms": 1578
+ },
+ {
+  "id": "O03",
+  "category": "out_of_scope",
+  "pass": true,
+  "problems": [],
+  "branch": "static",
+  "router": "rule",
+  "latency_ms": 432
+ },
+ {
+  "id": "O04",
+  "category": "out_of_scope",
+  "pass": true,
+  "problems": [],
+  "branch": "static",
+  "router": "rule",
+  "latency_ms": 426
+ },
+ {
+  "id": "O05",
+  "category": "out_of_scope",
+  "pass": true,
+  "problems": [],
+  "branch": "static",
+  "router": "llm",
+  "latency_ms": 1707
+ },
+ {
+  "id": "O06",
+  "category": "out_of_scope",
+  "pass": true,
+  "problems": [],
+  "branch": "static",
+  "router": "rule",
+  "latency_ms": 431
+ },
+ {
+  "id": "O07",
+  "category": "out_of_scope",
+  "pass": true,
+  "problems": [],
+  "branch": "static",
+  "router": "llm",
+  "latency_ms": 1563
+ },
+ {
+  "id": "O08",
+  "category": "out_of_scope",
+  "pass": true,
+  "problems": [],
+  "branch": "static",
+  "router": "rule",
+  "latency_ms": 427
+ },
+ {
+  "id": "G01",
+  "category": "greeting",
+  "pass": true,
+  "problems": [],
+  "branch": "static",
+  "router": "rule",
+  "latency_ms": 432
+ },
+ {
+  "id": "G02",
+  "category": "greeting",
+  "pass": true,
+  "problems": [],
+  "branch": "static",
+  "router": "rule",
+  "latency_ms": 428
+ },
+ {
+  "id": "G03",
+  "category": "greeting",
+  "pass": true,
+  "problems": [],
+  "branch": "static",
+  "router": "rule",
+  "latency_ms": 438
+ },
+ {
+  "id": "P01",
+  "category": "permission",
+  "pass": true,
+  "problems": [],
+  "branch": "rag",
+  "router": "llm",
+  "latency_ms": 23719
+ },
+ {
+  "id": "P02",
+  "category": "permission",
+  "pass": true,
+  "problems": [],
+  "branch": "rag",
+  "router": "llm",
+  "latency_ms": 4576
+ },
+ {
+  "id": "M01",
+  "category": "misc",
+  "pass": true,
+  "problems": [],
+  "branch": "metadata",
+  "router": "llm",
+  "latency_ms": 2929
+ },
+ {
+  "id": "M02",
+  "category": "misc",
+  "pass": true,
+  "problems": [],
+  "branch": "rag",
+  "router": "rule",
+  "latency_ms": 23630
+ },
+ {
+  "id": "M03",
+  "category": "misc",
+  "pass": true,
+  "problems": [],
+  "branch": "cache",
+  "router": "cache",
+  "latency_ms": 429
+ }
+]

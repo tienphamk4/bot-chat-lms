@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tư vấn học vụ — EDU-DOCBOT</title>
+<link rel="stylesheet" href="/chat.css">
+<style>
+  /* Trang tư vấn dùng tông xanh lục riêng cho dễ phân biệt với LMS */
+  :root {
+    --accent: #0e8a63; --accent-ink: #0b6e4f; --accent-soft: #d9f3e8;
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <div class="logo">💬</div>
+    <div>
+      <h1>Tư vấn học vụ</h1>
+      <span class="tag">Quy chế đào tạo · thi cử · học vụ — không cần đăng nhập</span>
+    </div>
+  </div>
+  <span class="spacer"></span>
+  <a class="pill-link" href="/">🎓 Tra cứu tài liệu</a>
+</header>
+
+<div id="log"></div>
+
+<form id="form">
+  <div class="composer">
+    <input id="input" type="text" autocomplete="off"
+           placeholder="Hỏi về quy chế, quy định của trường…">
+    <button id="send" type="submit" title="Gửi">➤</button>
+  </div>
+</form>
+<div class="hint">Trả lời dựa trên văn bản quy chế, quy định chính thức — luôn dẫn nguồn kèm số trang để bạn đối chiếu.</div>
+
+<script src="/chat.js"></script>
+<script>
+// Trang tư vấn: KHÔNG chọn ngữ cảnh, KHÔNG đăng nhập — ngữ cảnh cố định
+// 'advisory' (khoanh vùng văn bản quy chế/quy định), danh tính = khách.
+// Đây là vùng tài liệu công khai theo thiết kế nên khách dùng được trọn vẹn.
+initChat({
+  getHeaders: () => ({}),
+  getContext: () => ({ screen: 'advisory' }),
+  welcome: {
+    icon: '💬',
+    title: 'Góc tư vấn học vụ',
+    text: 'Mình trả lời dựa trên quy chế, quy định chính thức của trường — điều kiện '
+      + 'dự thi, thi lại, học cải thiện, chuyển đổi tín chỉ… Bạn cứ hỏi tự nhiên nhé!',
+    chips: [
+      'Điều kiện dự thi cuối kỳ?',
+      'Thi lại được mấy lần?',
+      'Học cải thiện điểm tính thế nào?',
+      'Chứng chỉ nghề nghiệp nào được chuyển đổi tín chỉ?',
+    ],
+  },
+});
+</script>
+</body>
+</html>

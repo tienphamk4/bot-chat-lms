@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Cấu hình chứa bí mật — không bao giờ commit
+.env
+
+# IDE
+.idea/
+.vscode/
+
+# Dữ liệu cục bộ
+files/
+*.log
+
+# pytest
+.pytest_cache/

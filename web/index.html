@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EDU-DOCBOT — LMS · tra cứu tài liệu</title>
+<link rel="stylesheet" href="/chat.css">
+</head>
+<body>
+<header>
+  <div class="brand">
+    <div class="logo">🎓</div>
+    <div>
+      <h1>EDU-DOCBOT</h1>
+      <span class="tag">Tra cứu &amp; hỏi đáp tài liệu học tập</span>
+    </div>
+  </div>
+  <span class="spacer"></span>
+  <label title="Giả lập vị trí người dùng trong LMS — app nhúng sẽ truyền tự động">
+    <span class="lbl">Ngữ cảnh</span>
+    <select id="ctx">
+      <option value="">🏠 Trang chủ LMS</option>
+    </select>
+  </label>
+  <label>
+    <span class="lbl">Đăng nhập thử</span>
+    <select id="user">
+      <option value="">Khách (chỉ tài liệu public)</option>
+      <option value="1">sv_toan — SV khoa Toán</option>
+      <option value="2">sv_cntt — SV khoa CNTT</option>
+      <option value="3">gv_toan — GV khoa Toán</option>
+      <option value="4">admin</option>
+    </select>
+  </label>
+  <a class="pill-link" href="/tuvan.html">💬 Tư vấn học vụ</a>
+  <a class="pill-link" href="/admin.html">⚙️ Quản trị</a>
+</header>
+
+<div id="log"></div>
+
+<form id="form">
+  <div class="composer">
+    <input id="input" type="text" autocomplete="off"
+           placeholder="Hỏi về tài liệu, nội dung môn học…">
+    <button id="send" type="submit" title="Gửi">➤</button>
+  </div>
+</form>
+<div class="hint">Trả lời dựa trên tài liệu trong kho, luôn kèm nguồn và số trang. Chọn ngữ cảnh bài học để hỏi sát môn đang mở.</div>
+
+<script src="/chat.js"></script>
+<script>
+// Trang LMS: danh tính theo ô đăng nhập thử; ngữ cảnh theo trang đang mở
+// (trang chủ hoặc bài học một môn — app LMS thật sẽ truyền tự động).
+const userSelect = document.getElementById('user');
+const ctxSelect = document.getElementById('ctx');
+
+(async () => {
+  try {
+    const res = await fetch('/api/v1/courses?limit=100');
+    if (!res.ok) return;
+    for (const c of await res.json()) {
+      const opt = document.createElement('option');
+      opt.value = 'lesson:' + c.code;
+      opt.textContent = '📘 Bài học · ' + c.code + ' — ' + c.name;
+      ctxSelect.appendChild(opt);
+    }
+  } catch {}
+})();
+
+initChat({
+  getHeaders: () => userSelect.value ? { 'X-User-Id': userSelect.value } : {},
+  getContext: () => {
+    const v = ctxSelect.value;
+    if (v.startsWith('lesson:')) return { screen: 'lesson', course_code: v.slice(7) };
+    return null;
+  },
+  welcome: {
+    icon: '🎓',
+    title: 'Bạn cần tìm tài liệu gì?',
+    text: 'Mình tìm giáo trình, slide, đề cương, đề thi theo môn — và trả lời câu hỏi '
+      + 'về nội dung bên trong tài liệu, luôn kèm nguồn với số trang.',
+    chips: [
+      'Giáo trình Giải tích 1',
+      'Môn OOP có những tài liệu gì?',
+      'Kế thừa trong lập trình hướng đối tượng là gì?',
+      'PHP hoạt động như thế nào?',
+    ],
+  },
+});
+</script>
+</body>
+</html>

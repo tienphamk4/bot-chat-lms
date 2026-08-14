@@ -1,0 +1,356 @@
+[
+ {
+  "id": "L01",
+  "category": "lookup",
+  "pass": true,
+  "problems": [],
+  "branch": "metadata",
+  "router": "rule",
+  "latency_ms": 3269
+ },
+ {
+  "id": "L02",
+  "category": "lookup",
+  "pass": true,
+  "problems": [],
+  "branch": "metadata",
+  "router": "rule",
+  "latency_ms": 874
+ },
+ {
+  "id": "L03",
+  "category": "lookup",
+  "pass": true,
+  "problems": [],
+  "branch": "metadata",
+  "router": "llm",
+  "latency_ms": 2742
+ },
+ {
+  "id": "L04",
+  "category": "lookup",
+  "pass": true,
+  "problems": [],
+  "branch": "metadata",
+  "router": "rule",
+  "latency_ms": 865
+ },
+ {
+  "id": "L05",
+  "category": "lookup",
+  "pass": true,
+  "problems": [],
+  "branch": "metadata",
+  "router": "rule",
+  "latency_ms": 858
+ },
+ {
+  "id": "L06",
+  "category": "lookup",
+  "pass": true,
+  "problems": [],
+  "branch": "metadata",
+  "router": "rule",
+  "latency_ms": 866
+ },
+ {
+  "id": "L07",
+  "category": "lookup",
+  "pass": true,
+  "problems": [],
+  "branch": "metadata",
+  "router": "rule",
+  "latency_ms": 869
+ },
+ {
+  "id": "L08",
+  "category": "lookup",
+  "pass": true,
+  "problems": [],
+  "branch": "metadata",
+  "router": "rule",
+  "latency_ms": 864
+ },
+ {
+  "id": "L09",
+  "category": "lookup",
+  "pass": false,
+  "problems": [
+   "thiếu 'không tìm thấy' trong câu trả lời"
+  ],
+  "branch": "fulltext",
+  "router": "rule",
+  "latency_ms": 1297
+ },
+ {
+  "id": "L10",
+  "category": "lookup",
+  "pass": false,
+  "problems": [
+   "thiếu 'không tìm thấy' trong câu trả lời"
+  ],
+  "branch": "fulltext",
+  "router": "rule",
+  "latency_ms": 1286
+ },
+ {
+  "id": "C01",
+  "category": "content",
+  "pass": true,
+  "problems": [],
+  "branch": "rag",
+  "router": "rule",
+  "latency_ms": 4038
+ },
+ {
+  "id": "C02",
+  "category": "content",
+  "pass": true,
+  "problems": [],
+  "branch": "rag",
+  "router": "llm",
+  "latency_ms": 12378
+ },
+ {
+  "id": "C03",
+  "category": "content",
+  "pass": true,
+  "problems": [],
+  "branch": "rag",
+  "router": "llm",
+  "latency_ms": 26713
+ },
+ {
+  "id": "C04",
+  "category": "content",
+  "pass": true,
+  "problems": [],
+  "branch": "rag",
+  "router": "rule",
+  "latency_ms": 9987
+ },
+ {
+  "id": "C05",
+  "category": "content",
+  "pass": true,
+  "problems": [],
+  "branch": "rag",
+  "router": "llm",
+  "latency_ms": 4659
+ },
+ {
+  "id": "C06",
+  "category": "content",
+  "pass": true,
+  "problems": [],
+  "branch": "rag",
+  "router": "llm",
+  "latency_ms": 25834
+ },
+ {
+  "id": "C07",
+  "category": "content",
+  "pass": true,
+  "problems": [],
+  "branch": "rag",
+  "router": "llm",
+  "latency_ms": 6998
+ },
+ {
+  "id": "C08",
+  "category": "content",
+  "pass": true,
+  "problems": [],
+  "branch": "rag",
+  "router": "rule",
+  "latency_ms": 8678
+ },
+ {
+  "id": "C09",
+  "category": "content",
+  "pass": true,
+  "problems": [],
+  "branch": "rag",
+  "router": "rule",
+  "latency_ms": 5816
+ },
+ {
+  "id": "C10",
+  "category": "content",
+  "pass": true,
+  "problems": [],
+  "branch": "rag",
+  "router": "rule",
+  "latency_ms": 3261
+ },
+ {
+  "id": "C11",
+  "category": "content",
+  "pass": false,
+  "problems": [
+   "không trích nguồn chứa 'web' (có: rỗng)"
+  ],
+  "branch": "rag",
+  "router": "llm",
+  "latency_ms": 4000
+ },
+ {
+  "id": "C12",
+  "category": "content",
+  "pass": true,
+  "problems": [],
+  "branch": "rag",
+  "router": "llm",
+  "latency_ms": 15067
+ },
+ {
+  "id": "O01",
+  "category": "out_of_scope",
+  "pass": true,
+  "problems": [],
+  "branch": "static",
+  "router": "rule",
+  "latency_ms": 432
+ },
+ {
+  "id": "O02",
+  "category": "out_of_scope",
+  "pass": true,
+  "problems": [],
+  "branch": "static",
+  "router": "llm",
+  "latency_ms": 1999
+ },
+ {
+  "id": "O03",
+  "category": "out_of_scope",
+  "pass": true,
+  "problems": [],
+  "branch": "static",
+  "router": "rule",
+  "latency_ms": 442
+ },
+ {
+  "id": "O04",
+  "category": "out_of_scope",
+  "pass": true,
+  "problems": [],
+  "branch": "static",
+  "router": "rule",
+  "latency_ms": 429
+ },
+ {
+  "id": "O05",
+  "category": "out_of_scope",
+  "pass": true,
+  "problems": [],
+  "branch": "static",
+  "router": "llm",
+  "latency_ms": 1688
+ },
+ {
+  "id": "O06",
+  "category": "out_of_scope",
+  "pass": true,
+  "problems": [],
+  "branch": "static",
+  "router": "rule",
+  "latency_ms": 430
+ },
+ {
+  "id": "O07",
+  "category": "out_of_scope",
+  "pass": false,
+  "problems": [
+   "thiếu 'phạm vi' trong câu trả lời"
+  ],
+  "branch": "static",
+  "router": "llm",
+  "latency_ms": 1485
+ },
+ {
+  "id": "O08",
+  "category": "out_of_scope",
+  "pass": true,
+  "problems": [],
+  "branch": "static",
+  "router": "rule",
+  "latency_ms": 428
+ },
+ {
+  "id": "G01",
+  "category": "greeting",
+  "pass": true,
+  "problems": [],
+  "branch": "static",
+  "router": "rule",
+  "latency_ms": 426
+ },
+ {
+  "id": "G02",
+  "category": "greeting",
+  "pass": true,
+  "problems": [],
+  "branch": "static",
+  "router": "rule",
+  "latency_ms": 427
+ },
+ {
+  "id": "G03",
+  "category": "greeting",
+  "pass": true,
+  "problems": [],
+  "branch": "static",
+  "router": "rule",
+  "latency_ms": 426
+ },
+ {
+  "id": "P01",
+  "category": "permission",
+  "pass": false,
+  "problems": [
+   "thiếu 'không tìm thấy' trong câu trả lời"
+  ],
+  "branch": "rag",
+  "router": "llm",
+  "latency_ms": 25099
+ },
+ {
+  "id": "P02",
+  "category": "permission",
+  "pass": true,
+  "problems": [],
+  "branch": "rag",
+  "router": "llm",
+  "latency_ms": 15051
+ },
+ {
+  "id": "M01",
+  "category": "misc",
+  "pass": true,
+  "problems": [],
+  "branch": "metadata",
+  "router": "llm",
+  "latency_ms": 3048
+ },
+ {
+  "id": "M02",
+  "category": "misc",
+  "pass": false,
+  "problems": [
+   "không trích nguồn chứa 'giai tich' (có: rỗng)"
+  ],
+  "branch": "rag",
+  "router": "rule",
+  "latency_ms": 2140
+ },
+ {
+  "id": "M03",
+  "category": "misc",
+  "pass": true,
+  "problems": [],
+  "branch": "cache",
+  "router": "cache",
+  "latency_ms": 433
+ }
+]

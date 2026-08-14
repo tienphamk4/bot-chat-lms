@@ -1,0 +1,37 @@
+-- ⚠️ ĐỪNG CHẠY FILE NÀY nếu bạn dùng được CLI. Thêm môn bằng CSV:
+--
+--     .venv\Scripts\python -m ingest.cli import-courses scripts\courses-example.csv
+--
+--   CSV cột: code,name,faculty_id,credits,aliases   (aliases cách nhau '|')
+--   Lệnh dùng UPSERT: chạy lại nhiều lần không lỗi trùng, mã cũ thì cập nhật.
+--   Nó tự tính 6 cột dẫn xuất và tự làm mới chỉ mục → bot hiểu tên tắt ngay.
+--
+-- ---------------------------------------------------------------------------
+-- Chỉ khi buộc phải làm bằng SQL tay (không chạy được Python):
+--
+-- 1) Bảng courses có 6 cột NOT NULL do ỨNG DỤNG tính. Thiếu → lỗi 1364
+--    "doesn't have a default value":
+--      code_norm      mã viết thường            'INT1008' → 'int1008'
+--      name_norm      tên bỏ dấu, viết thường   'Cấu trúc dữ liệu' → 'cau truc du lieu'
+--      aliases_norm, lecturers_norm, semesters, search_norm → điền '' tạm
+--
+-- 2) code_norm là khóa UNIQUE. Chèn mã đã tồn tại → lỗi 1062 "Duplicate entry".
+--    Kiểm tra trước:   SELECT code, name FROM courses ORDER BY id;
+--    Muốn SỬA môn có sẵn thì dùng UPDATE, không dùng INSERT.
+--
+-- 3) SAU MỌI thay đổi bằng SQL tay, BẮT BUỘC chạy:
+--      .venv\Scripts\python -m ingest.cli resync-derived
+--    (dựng lại 4 cột dẫn xuất + nạp lại chỉ mục tên môn; bỏ qua bước này thì
+--     môn có trong DB nhưng bot không hiểu tên/tên gọi tắt của nó)
+--
+-- faculty_id: 1=CNTT, 2=Toán-Cơ-Tin, 3=Kinh tế quốc tế
+--   (SELECT id, code, name FROM faculties;)
+--
+-- Mẫu INSERT — ĐỔI MÃ MÔN thành mã chưa có trước khi chạy:
+--
+-- INSERT INTO courses
+--   (code, code_norm, name, name_norm, faculty_id, credits,
+--    aliases, offerings, aliases_norm, lecturers_norm, semesters, search_norm, active)
+-- VALUES
+--   ('INT9999', 'int9999', 'Tên môn của bạn', 'ten mon cua ban',
+--    1, 3, '["tenTat"]', '[]', '', '', '', '', 1);

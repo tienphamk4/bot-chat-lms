@@ -1,0 +1,38 @@
+{"id": "L01", "category": "lookup", "user": 1, "message": "giáo trình giải tích 1 có không", "expect_intent": "lookup_doc", "expect_branch": ["metadata"], "must_cite": "giai tich"}
+{"id": "L02", "category": "lookup", "user": 1, "message": "tài liệu GT1", "expect_intent": "lookup_doc", "expect_branch": ["metadata"], "must_cite": "giai tich"}
+{"id": "L03", "category": "lookup", "user": 1, "message": "MAT1093", "expect_branch": ["metadata"], "must_cite": "giai tich"}
+{"id": "L04", "category": "lookup", "user": 2, "message": "đề cương lập trình hướng đối tượng", "expect_intent": "lookup_doc", "expect_branch": ["metadata"], "must_cite": "doi tuong"}
+{"id": "L05", "category": "lookup", "user": 2, "message": "INT2204 có tài liệu gì", "expect_intent": "lookup_doc", "expect_branch": ["metadata"]}
+{"id": "L06", "category": "lookup", "user": 2, "message": "tài liệu OOP", "expect_branch": ["metadata"], "must_cite": "oop"}
+{"id": "L07", "category": "lookup", "user": 2, "message": "INT3306 có những tài liệu nào", "expect_branch": ["metadata"]}
+{"id": "L08", "category": "lookup", "user": 1, "message": "quy chế đào tạo", "expect_branch": ["metadata"], "must_cite": "quy che"}
+{"id": "L09", "category": "lookup", "user": 1, "message": "đề thi xác suất thống kê", "expect_branch": ["metadata", "fulltext", "content", "rag"], "must_contain": ["không tìm thấy"], "note": "XSTK chưa có tài liệu — phải nói thật là không có"}
+{"id": "L10", "category": "lookup", "user": 1, "message": "slide giải tích 1", "must_contain": ["không tìm thấy"], "note": "GT1 chỉ có giáo trình demo"}
+{"id": "C01", "category": "content", "user": 1, "message": "quy chế thi lại quy định thế nào", "expect_intent": "ask_content", "expect_branch": ["rag", "content"], "must_cite": "quy che"}
+{"id": "C02", "category": "content", "user": 1, "message": "điều kiện được dự thi cuối kỳ là gì", "expect_branch": ["rag", "content"], "must_contain": ["80%"]}
+{"id": "C03", "category": "content", "user": 1, "message": "học cải thiện điểm thì tính điểm thế nào", "expect_branch": ["rag", "content"], "must_contain": ["cao nhất"]}
+{"id": "C04", "category": "content", "user": 1, "message": "khi nào sinh viên bị buộc thôi học", "expect_branch": ["rag", "content"], "must_cite": "quy che"}
+{"id": "C05", "category": "content", "user": 1, "message": "đạo hàm là gì", "expect_branch": ["rag", "content"], "must_cite": "giai tich"}
+{"id": "C06", "category": "content", "user": 1, "message": "định lý Weierstrass nói gì", "expect_branch": ["rag", "content"], "must_cite": "giai tich"}
+{"id": "C07", "category": "content", "user": 1, "message": "công thức Newton-Leibniz dùng để làm gì", "expect_branch": ["rag", "content"], "must_cite": "giai tich"}
+{"id": "C08", "category": "content", "user": 2, "message": "tính kế thừa trong lập trình hướng đối tượng là gì", "expect_branch": ["rag", "content"], "must_cite": "oop"}
+{"id": "C09", "category": "content", "user": 2, "message": "đóng gói trong OOP nghĩa là gì", "expect_branch": ["rag", "content"], "must_cite": "oop"}
+{"id": "C10", "category": "content", "user": 2, "message": "toàn bộ nội dung giải tích 1", "expect_intent": "ask_content", "expect_branch": ["rag", "content"], "must_cite": "giai tich"}
+{"id": "C11", "category": "content", "user": 2, "message": "PHP là gì", "expect_branch": ["rag", "content"], "must_cite": "web", "note": "tài liệu web thuộc khoa CNTT — sv_cntt phải thấy"}
+{"id": "C12", "category": "content", "user": 2, "message": "môn này học những gì", "context": {"screen": "lesson", "course_code": "INT3306"}, "expect_branch": ["rag", "content"], "must_cite": "web", "note": "ngữ cảnh trang bài học phải tự hiểu 'môn này'"}
+{"id": "O01", "category": "out_of_scope", "user": 1, "message": "giải giúp mình bài 3 trang 20", "expect_intent": "out_of_scope", "expect_branch": ["static"]}
+{"id": "O02", "category": "out_of_scope", "user": 1, "message": "điểm thi giữa kỳ của mình bao nhiêu", "expect_intent": "out_of_scope", "expect_branch": ["static"]}
+{"id": "O03", "category": "out_of_scope", "user": 1, "message": "học phí kỳ này bao nhiêu tiền", "expect_intent": "out_of_scope", "expect_branch": ["static"]}
+{"id": "O04", "category": "out_of_scope", "user": 1, "message": "thời khóa biểu tuần sau thế nào", "expect_intent": "out_of_scope", "expect_branch": ["static"]}
+{"id": "O05", "category": "out_of_scope", "user": 1, "message": "viết hộ mình bài tiểu luận triết học", "expect_intent": "out_of_scope", "expect_branch": ["static"]}
+{"id": "O06", "category": "out_of_scope", "user": 1, "message": "đăng ký học phần giúp mình", "expect_intent": "out_of_scope", "expect_branch": ["static"]}
+{"id": "O07", "category": "out_of_scope", "user": 2, "message": "elon musk là ai", "must_contain": ["ngoài", "phạm vi"], "note": "kiến thức nền ngoài học liệu — không được bịa; chấp nhận từ chối hoặc không-tìm-thấy có chữ 'ngoài phạm vi'"}
+{"id": "O08", "category": "out_of_scope", "user": 1, "message": "đáp án bài này là gì", "expect_intent": "out_of_scope", "expect_branch": ["static"]}
+{"id": "G01", "category": "greeting", "user": 1, "message": "chào bạn", "expect_intent": "greeting", "expect_branch": ["static"]}
+{"id": "G02", "category": "greeting", "user": 1, "message": "hello", "expect_intent": "greeting", "expect_branch": ["static"]}
+{"id": "G03", "category": "greeting", "user": 1, "message": "cảm ơn nhé", "expect_intent": "greeting", "expect_branch": ["static"]}
+{"id": "P01", "category": "permission", "user": 0, "message": "PHP là gì", "must_contain": ["không tìm thấy"], "note": "khách ẩn danh — tài liệu web để quyền hạn chế thì phải như không tồn tại; nếu tài liệu đang public thì case này FAIL và đó là tín hiệu đúng để soát lại quyền"}
+{"id": "P02", "category": "permission", "user": 1, "message": "PHP là gì", "must_contain": ["không tìm thấy"], "note": "sv_toan khác khoa với tài liệu web (CNTT)"}
+{"id": "M01", "category": "misc", "user": 1, "message": "môn nào dạy về đạo hàm và tích phân", "expect_branch": ["rag", "content", "metadata", "fulltext"], "note": "câu mơ hồ — đi router LLM, chỉ cần không lỗi và có câu trả lời"}
+{"id": "M02", "category": "misc", "user": 2, "message": "chương 2 giáo trình giải tích nói gì về đạo hàm", "expect_intent": "ask_content", "expect_branch": ["rag", "content"], "must_cite": "giai tich"}
+{"id": "M03", "category": "misc", "user": 1, "message": "giáo trình giải tích 1 có không", "expect_branch": ["cache", "metadata"], "note": "trùng L01 — lượt hai trong cùng phiên eval nên hit cache"}

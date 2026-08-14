@@ -1,0 +1,12 @@
+# /etc/systemd/system/edu-docbot-ingest.timer
+# systemctl enable --now edu-docbot-ingest.timer
+
+[Unit]
+Description=EDU-DOCBOT quét thư mục tài liệu lúc 2h sáng
+
+[Timer]
+OnCalendar=*-*-* 02:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

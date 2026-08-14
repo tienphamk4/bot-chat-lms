@@ -1,0 +1,4 @@
+# Tùy chọn KT-06 — rerank local bge-reranker-v2-m3. Nặng (~2GB model + torch CPU).
+# Cài trên server rồi đặt RERANK_ENABLED=1 trong .env:
+#   pip install -r requirements-rerank.txt
+sentence-transformers>=3.0
