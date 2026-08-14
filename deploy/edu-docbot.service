@@ -2,15 +2,19 @@
 # systemctl daemon-reload && systemctl enable --now edu-docbot
 
 [Unit]
+# CSDL là Cloud SQL, nối qua Auth Proxy chạy ở 127.0.0.1:3306 — không có
+# mariadb.service trên máy này.
 Description=EDU-DOCBOT API (FastAPI/uvicorn)
-After=network.target mariadb.service
-Wants=mariadb.service
+After=network.target cloud-sql-proxy.service
+Wants=cloud-sql-proxy.service
 
 [Service]
 Type=exec
 User=docbot
 Group=docbot
-WorkingDirectory=/srv/edu-docbot/app
+# Gốc dự án, KHÔNG phải .../app: `app.main:app` là đường dẫn gói tính từ đây.
+# Đặt vào /srv/edu-docbot/app thì uvicorn không import nổi và service chết ngay.
+WorkingDirectory=/srv/edu-docbot
 EnvironmentFile=/srv/edu-docbot/.env
 ExecStart=/srv/edu-docbot/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8080 --workers 2
 Restart=on-failure

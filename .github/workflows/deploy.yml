@@ -1,0 +1,72 @@
+# Đưa mã nguồn lên VM Google Cloud sau khi test xanh.
+#
+# Cần khai báo sẵn trong GitHub → Settings → Secrets and variables → Actions
+# (cách lấy từng giá trị: docs/trien-khai-gcp.md, Phần B):
+#   Secrets   GCP_WIF_PROVIDER     projects/<SỐ>/locations/global/workloadIdentityPools/github/providers/github-provider
+#             GCP_SERVICE_ACCOUNT  github-deployer@<PROJECT_ID>.iam.gserviceaccount.com
+#   Variables GCP_PROJECT          <PROJECT_ID>
+#             GCE_INSTANCE         edu-docbot
+#             GCE_ZONE             us-central1-a
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+# Hai lần push sát nhau không được ghi đè lẫn nhau giữa chừng trên server.
+# cancel-in-progress: false — hủy nửa chừng một lượt deploy còn tệ hơn chờ.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Unit test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: pytest -q
+
+  deploy:
+    name: Deploy lên VM
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write        # BẮT BUỘC: thiếu là WIF không lấy được OIDC token
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Đóng gói mã nguồn
+        # Chỉ đóng gói thứ chạy trên server. .env và files/ không có trong repo
+        # và cũng không được có — chúng chỉ sống trên đĩa VM.
+        run: |
+          tar czf /tmp/edu-docbot.tar.gz \
+            app ingest eval migrations scripts web deploy \
+            requirements.txt requirements-rerank.txt
+
+      - name: Xác thực Google Cloud (WIF — không có khóa JSON nào)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Chép gói lên VM
+        # --tunnel-through-iap: đi qua IAP nên cổng 22 của VM không cần mở ra
+        # Internet. --quiet: tự sinh khóa SSH tạm trên runner, không hỏi gì.
+        run: |
+          gcloud compute scp /tmp/edu-docbot.tar.gz "${{ vars.GCE_INSTANCE }}:/tmp/edu-docbot.tar.gz" --zone="${{ vars.GCE_ZONE }}" --project="${{ vars.GCP_PROJECT }}" --tunnel-through-iap --quiet
+
+      - name: Giải nén, đồng bộ, khởi động lại
+        # remote-update.sh tự kiểm chứng /readyz và trả mã lỗi khác 0 nếu hỏng
+        # → bước này đỏ, không có chuyện "deploy xanh mà server chết".
+        run: |
+          gcloud compute ssh "${{ vars.GCE_INSTANCE }}" --zone="${{ vars.GCE_ZONE }}" --project="${{ vars.GCP_PROJECT }}" --tunnel-through-iap --quiet --command='rm -rf /tmp/edu-docbot-deploy && mkdir -p /tmp/edu-docbot-deploy && tar xzf /tmp/edu-docbot.tar.gz -C /tmp/edu-docbot-deploy && sudo bash /tmp/edu-docbot-deploy/deploy/remote-update.sh'

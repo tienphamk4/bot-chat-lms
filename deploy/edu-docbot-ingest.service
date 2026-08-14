@@ -3,14 +3,15 @@
 
 [Unit]
 Description=EDU-DOCBOT nạp tài liệu theo lô
-After=mariadb.service
-Wants=mariadb.service
+After=cloud-sql-proxy.service
+Wants=cloud-sql-proxy.service
 
 [Service]
 Type=oneshot
 User=docbot
 Group=docbot
-WorkingDirectory=/srv/edu-docbot/app
+# Gốc dự án — `python -m ingest.cli` cần thấy gói ingest/ và app/ từ cwd.
+WorkingDirectory=/srv/edu-docbot
 EnvironmentFile=/srv/edu-docbot/.env
 ExecStart=/srv/edu-docbot/venv/bin/python -m ingest.cli scan
 

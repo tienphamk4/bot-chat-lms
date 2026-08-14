@@ -1,0 +1,36 @@
+# /etc/systemd/system/cloud-sql-proxy.service
+#
+# Cloud SQL Auth Proxy: mở 127.0.0.1:3306 trên VM, nối tới Cloud SQL bằng
+# service account của chính VM (ADC lấy từ metadata server). Nhờ vậy Cloud SQL
+# không phải mở IP public, và .env không chứa chứng chỉ nào.
+#
+# ⚠ ĐÂY LÀ BẢN MẪU — còn placeholder. Trước khi enable phải thay
+#   PROJECT:REGION:INSTANCE
+# bằng "Connection name" thật (Console → SQL → instance → Overview).
+# Vì lý do đó, deploy/remote-update.sh CỐ Ý không chép đè file này khi deploy:
+# chép đè là đưa placeholder lên máy đang chạy và sập kết nối CSDL.
+#
+# Cài: sudo cp deploy/cloud-sql-proxy.service /etc/systemd/system/
+#      sudo sed -i "s|PROJECT:REGION:INSTANCE|<connection name thật>|" /etc/systemd/system/cloud-sql-proxy.service
+#      sudo systemctl daemon-reload && sudo systemctl enable --now cloud-sql-proxy
+
+[Unit]
+Description=Cloud SQL Auth Proxy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=docbot
+Group=docbot
+ExecStart=/usr/local/bin/cloud-sql-proxy --address 127.0.0.1 --port 3306 PROJECT:REGION:INSTANCE
+Restart=always
+RestartSec=3
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

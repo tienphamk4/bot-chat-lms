@@ -1,0 +1,30 @@
+# Kiểm thử nhánh phụ và pull request.
+# Nhánh main KHÔNG chạy ở đây — deploy.yml đã có job test riêng chặn trước khi
+# lên server; chạy cả hai chỉ tốn đôi phút runner mà không thêm thông tin nào.
+name: CI
+
+on:
+  push:
+    branches-ignore: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Unit test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Cài thư viện
+        run: pip install -r requirements.txt
+
+      - name: Chạy unit test
+        # tests/conftest.py bỏ qua test đánh dấu @pytest.mark.db theo mặc định
+        # → runner không cần dựng MySQL. Muốn chạy nhóm đó: pytest -m db.
+        run: pytest -q
