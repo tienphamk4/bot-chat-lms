@@ -158,58 +158,43 @@ def answer(
     return result
 
 
-def _generate_pass(
-    identity: Identity,
-    route: RouterResult,
-    course: dict | None,
-    keep: int,
-    emit,
-    trace,
-    query_vector,
-    tokens_embed: int,
-    scope,
-    scope_doc_type: str | None,
-    settings,
-) -> RagResult | None:
-    """Một lượt trọn vẹn: truy hồi → rerank → sinh → kiểm trích dẫn."""
-    question = route.standalone_question
+_MAX_CHUNKS_PER_DOC = 3
 
-    candidates = retrieval.hybrid_search(
-        identity,
-        question,
-        query_vector,
-        route.keywords,
-        course,
-        per_channel=settings.rag_topk_per_channel,
-        scope_course_ids=scope,
-        scope_doc_type=scope_doc_type,
-    )
-    if not candidates and (scope or scope_doc_type):
-        # Phạm vi ngữ cảnh trống trơn → nới ra toàn kho (vẫn đúng quyền).
-        candidates = retrieval.hybrid_search(
-            identity,
-            question,
-            query_vector,
-            route.keywords,
-            course,
-            per_channel=settings.rag_topk_per_channel,
-        )
-    if trace:
-        trace.mark("truy hồi hybrid ‖ (DB)")
-    if not candidates:
-        return RagResult(
-            answer="", not_found=True, tokens_embed=tokens_embed
-        )
 
-    chunks = reranker.rerank(question, candidates, keep=keep)
-    if trace:
-        trace.mark("rerank")
+def _select_diverse(pool: list[dict], keep: int) -> list[dict]:
+    """Chọn `keep` chunk theo thứ hạng nhưng mỗi tài liệu tối đa 3 — còn suất
+    trống mới lấp lại bằng những chunk đã bị chặn (giữ nguyên thứ hạng)."""
+    selected: list[dict] = []
+    overflow: list[dict] = []
+    per_doc: dict = {}
+    for chunk in pool:
+        if len(selected) >= keep:
+            break
+        doc_id = chunk["document_id"]
+        if per_doc.get(doc_id, 0) >= _MAX_CHUNKS_PER_DOC:
+            overflow.append(chunk)
+            continue
+        per_doc[doc_id] = per_doc.get(doc_id, 0) + 1
+        selected.append(chunk)
+    for chunk in overflow:
+        if len(selected) >= keep:
+            break
+        selected.append(chunk)
+    return selected
 
+
+def _stream_generation(
+    question: str, chunks: list[dict], emit, trace, settings
+) -> tuple[list[str], set[int], "vertex.TextResult | None", bool]:
+    """Một lượt sinh + hậu kiểm trích dẫn theo câu.
+
+    Trả (câu đã giữ, tập [n] đã trích, kết quả cuối, model_tự_bảo_không_thấy).
+    Câu KHÔNG gắn [n] bị GIỮ LẠI tới khi xuất hiện câu có nguồn — cả bài không
+    có nguồn nào là vi phạm "bắt buộc kèm trích dẫn": không phát ra chữ nào
+    (để còn thử lớp chunk khác / phạm vi khác / fallback).
+    """
     kept: list[str] = []
     cited: set[int] = set()
-    # Câu KHÔNG gắn [n] bị GIỮ LẠI tới khi xuất hiện câu có nguồn — cả bài
-    # không có nguồn nào là vi phạm "bắt buộc kèm trích dẫn": không được phát
-    # ra một chữ nào (để còn thử lại phạm vi khác hoặc fallback).
     held_unmarked: list[str] = []
     buffer = ""
     final: vertex.TextResult | None = None
@@ -258,15 +243,92 @@ def _generate_pass(
 
     if buffer.strip():
         _take(buffer.strip())
+    return kept, cited, final, not_found
+
+
+def _generate_pass(
+    identity: Identity,
+    route: RouterResult,
+    course: dict | None,
+    keep: int,
+    emit,
+    trace,
+    query_vector,
+    tokens_embed: int,
+    scope,
+    scope_doc_type: str | None,
+    settings,
+) -> RagResult | None:
+    """Một lượt trọn vẹn: truy hồi → rerank → sinh → kiểm trích dẫn."""
+    question = route.standalone_question
+
+    candidates = retrieval.hybrid_search(
+        identity,
+        question,
+        query_vector,
+        route.keywords,
+        course,
+        per_channel=settings.rag_topk_per_channel,
+        scope_course_ids=scope,
+        scope_doc_type=scope_doc_type,
+    )
+    if not candidates and (scope or scope_doc_type):
+        # Phạm vi ngữ cảnh trống trơn → nới ra toàn kho (vẫn đúng quyền).
+        candidates = retrieval.hybrid_search(
+            identity,
+            question,
+            query_vector,
+            route.keywords,
+            course,
+            per_channel=settings.rag_topk_per_channel,
+        )
+    if trace:
+        trace.mark("truy hồi hybrid ‖ (DB)")
+    if not candidates:
+        return RagResult(
+            answer="", not_found=True, tokens_embed=tokens_embed
+        )
+
+    # Pool rộng gấp đôi rồi CHỌN ĐA DẠNG: không reranker thì thứ hạng RRF thô,
+    # một bộ slide điểm cao dễ chiếm trọn suất trong khi câu trả lời nằm ở tài
+    # liệu khác — chặn mỗi tài liệu tối đa 3 chunk trong lượt đầu.
+    pool = reranker.rerank(question, candidates, keep=keep * 2)
+    if trace:
+        trace.mark("rerank")
+
+    chunks = _select_diverse(pool, keep)
+    kept, cited, final, model_said_no = _stream_generation(
+        question, chunks, emit, trace, settings
+    )
+    tokens_in = final.tokens_in if final else 0
+    tokens_out = final.tokens_out if final else 0
+
+    # Model bảo không thấy nhưng kho CÒN ứng viên chưa dùng → thử ĐÚNG MỘT lần
+    # với lớp chunk kế tiếp (chữa ca "chunk đúng xếp hạng 7-12"). Chỉ khi chưa
+    # phát ra chữ nào (cited rỗng = mọi câu còn bị giữ) — không bao giờ nối hai
+    # câu trả lời dở vào nhau.
+    if (not kept or not cited) and not cited:
+        used = {c["chunk_id"] for c in chunks}
+        second = [c for c in pool if c["chunk_id"] not in used][:keep]
+        if second:
+            if trace:
+                trace.mark("sinh — chưa thấy, thử lớp chunk kế")
+            kept2, cited2, final2, said_no2 = _stream_generation(
+                question, second, emit, trace, settings
+            )
+            tokens_in += final2.tokens_in if final2 else 0
+            tokens_out += final2.tokens_out if final2 else 0
+            if kept2 and cited2:
+                chunks, kept, cited, final = second, kept2, cited2, final2
+            else:
+                model_said_no = model_said_no or said_no2
     if trace:
         trace.mark("sinh — hoàn tất")
 
     if final is None and not kept:
         return None  # model hỏng trước khi ra được câu nào — fallback trích nguyên văn
 
-    tokens_in = final.tokens_in if final else 0
-    tokens_out = final.tokens_out if final else 0
-    model_name = final.model if final else settings.gen_model
+    model_name = (final.model if final else None) or settings.gen_model
     finish = final.finish_reason if final else "STREAM_ABORTED"
 
     if finish and "MAX_TOKENS" in finish:
@@ -278,7 +340,7 @@ def _generate_pass(
             # Có chữ nhưng không một nguồn nào — NFR "bắt buộc kèm trích dẫn"
             # cấm đưa ra ngoài (held_unmarked bảo đảm chưa chữ nào bị phát đi).
             log.warning("RAG: câu trả lời không có trích dẫn nào — loại toàn bộ")
-        elif not kept and not not_found:
+        elif not kept and not model_said_no:
             # Mọi câu đều bị loại vì nguồn bịa — coi như không tìm thấy.
             log.warning("RAG: toàn bộ câu trả lời bị loại do trích dẫn không ánh xạ được")
         return RagResult(

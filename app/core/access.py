@@ -123,6 +123,11 @@ def can_read_document(identity: Identity, document: dict) -> bool:
     access = document.get("access")
     if access == "public":
         return True
+    # Quản trị viên quản lý cả kho: phải mở/xem trước được mọi tài liệu, kể cả
+    # tài liệu giới hạn theo khoa (tài khoản admin thường không thuộc khoa nào
+    # nên luật khoa sẽ chặn oan chính người đang quản trị nó).
+    if identity.role == "admin":
+        return True
     if access == "faculty":
         return (
             identity.faculty_id is not None

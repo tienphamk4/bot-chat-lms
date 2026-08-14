@@ -363,6 +363,15 @@ def ingest_file(
             ],
         )
 
+    # PDF xem trước cho file Office (popup trích dẫn mở như Google Drive).
+    # Convert hỏng/không có bộ chuyển → bỏ qua êm, đã log bên trong.
+    try:
+        from ingest import preview
+
+        preview.generate_preview(path, int(document_id), files_root)
+    except Exception:  # pragma: no cover - tùy môi trường có Office/soffice
+        log.warning("Sinh preview cho %s thất bại (bỏ qua)", path.name)
+
     return IngestResult(document_id, "indexed", f"{len(chunks)} chunk")
 
 

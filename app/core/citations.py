@@ -99,13 +99,17 @@ def _snippet(content: str | None) -> str | None:
 def _to_citation(n: int, chunk: dict[str, Any]) -> Citation:
     document_id = int(chunk["document_id"])
     file_path = str(chunk.get("file_path") or "")
-    # Chỉ PDF có preview inline (trình duyệt render + nhảy trang #page=N);
-    # docx/pptx/md rơi về popup snippet + nút tải.
-    preview_url = (
-        f"/api/v1/documents/{document_id}/preview"
-        if file_path.lower().endswith(".pdf")
-        else None
-    )
+    # PDF render thẳng; PPTX/DOCX dùng bản PDF đã convert lúc nạp (nếu có) —
+    # trang PDF khớp 1:1 slide nên nhảy trang theo trích dẫn vẫn đúng.
+    preview_url = None
+    if file_path.lower().endswith(".pdf"):
+        preview_url = f"/api/v1/documents/{document_id}/preview"
+    else:
+        from app.config import get_settings
+        from ingest.preview import preview_path
+
+        if preview_path(get_settings().files_root, document_id).is_file():
+            preview_url = f"/api/v1/documents/{document_id}/preview"
     return Citation(
         n=n,
         document_id=document_id,

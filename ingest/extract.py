@@ -148,6 +148,42 @@ def _extract_pdf(path: Path) -> Extraction:
     )
 
 
+_SPACE_GAP_EM = 0.15
+
+
+def _line_text(raw_line: dict) -> str:
+    """Dựng chữ của một dòng, KHÔI PHỤC dấu cách bị mất.
+
+    Slide PowerPoint xuất PDF hay đánh rơi ký tự space: 'Kiểm thử hệ thống'
+    thành 'Kiểm thửhệthống' — chữ dính thì FULLTEXT trượt, embedding méo và
+    model đọc ra rác (đo trên kho: chunk slide dính 5-10 từ mỗi trang).
+    Chữ bị mất space vẫn để lại KHOẢNG TRỐNG HÌNH HỌC: đo thực tế trên slide
+    hỏng, gap chỗ thiếu space là 0,27 em còn giữa các chữ trong cùng từ là
+    0,00 em — ngưỡng 0,15 em tách bạch tuyệt đối, không có vùng xám.
+    """
+    parts: list[str] = []
+    prev_x1: float | None = None
+    prev_char = ""
+    for span in raw_line.get("spans", []):
+        size = float(span.get("size", 0.0)) or 12.0
+        for char in span.get("chars", []):
+            value = char.get("c", "")
+            if not value:
+                continue
+            bbox = char.get("bbox", (0.0, 0.0, 0.0, 0.0))
+            x0, x1 = float(bbox[0]), float(bbox[2])
+            if (
+                prev_x1 is not None
+                and x0 - prev_x1 >= size * _SPACE_GAP_EM
+                and not prev_char.isspace()
+                and not value.isspace()
+            ):
+                parts.append(" ")
+            parts.append(value)
+            prev_x1, prev_char = x1, value
+    return "".join(parts)
+
+
 def _collect_pdf_lines(path: Path) -> tuple[list[list[_Line]], int]:
     import fitz
 
@@ -157,15 +193,19 @@ def _collect_pdf_lines(path: Path) -> tuple[list[list[_Line]], int]:
         for page in document:
             height = float(page.rect.height)
             lines: list[_Line] = []
-            data = page.get_text("dict")
+            # rawdict cho bbox TỪNG KÝ TỰ — cần để khôi phục dấu cách bị mất.
+            data = page.get_text("rawdict")
             for block_index, block in enumerate(data.get("blocks", [])):
                 if block.get("type") != 0:  # bỏ block ảnh
                     continue
                 for raw_line in block.get("lines", []):
-                    spans = [s for s in raw_line.get("spans", []) if s.get("text", "").strip()]
+                    spans = [
+                        s for s in raw_line.get("spans", [])
+                        if any(not c.get("c", " ").isspace() for c in s.get("chars", []))
+                    ]
                     if not spans:
                         continue
-                    text = "".join(s["text"] for s in raw_line.get("spans", [])).strip()
+                    text = _line_text(raw_line).strip()
                     if not text:
                         continue
                     raw_chars += len(text)

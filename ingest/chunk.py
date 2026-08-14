@@ -29,6 +29,10 @@ from ingest.extract import Extraction
 TARGET_TOKENS = 500
 OVERLAP_TOKENS = 80
 MIN_TOKENS = 120
+# Trần số TRANG một chunk được trải — slide mỗi trang ít chữ, không chặn thì
+# một chunk ôm 8-10 slide: trích dẫn 'tr. 23–30' nhảy trang đầu khoảng nhưng ý
+# được trích nằm tận trang 28 → focus kém. 4 trang là đủ hẹp để nhảy gần đúng.
+MAX_PAGE_SPAN = 4
 
 _CHARS_PER_TOKEN = 2.3
 MAX_HEADING_CHARS = 120
@@ -199,7 +203,14 @@ def split(extraction: Extraction) -> list[Chunk]:
 
         block_tokens = estimate_tokens(block.text)
 
-        if current_tokens + block_tokens > TARGET_TOKENS and current_tokens >= MIN_TOKENS:
+        span_exceeded = (
+            current
+            and block.page - current[0].page >= MAX_PAGE_SPAN
+            and current_tokens >= MIN_TOKENS
+        )
+        if span_exceeded or (
+            current_tokens + block_tokens > TARGET_TOKENS and current_tokens >= MIN_TOKENS
+        ):
             flush()
 
         if block_tokens > TARGET_TOKENS:

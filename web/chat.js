@@ -55,8 +55,11 @@ function openPreview(c) {
          <div class="pv-snip-text">${esc(c.snippet)}</div>
        </div>`
     : '';
-  const frame = c.preview_url
-    ? `<iframe class="pv-frame" src="${c.preview_url}${uid ? `?uid=${uid}` : ''}#page=${page}&zoom=page-width&navpanes=0"></iframe>`
+  const frameUrl = c.preview_url
+    ? `${c.preview_url}${uid ? `?uid=${uid}` : ''}#page=${page}&navpanes=0&zoom=page-width`
+    : null;
+  const frame = frameUrl
+    ? `<iframe class="pv-frame" src="${frameUrl}"></iframe>`
     : `<div class="pv-nofile">Định dạng này chưa xem trước inline được — bạn tải về để mở nhé.</div>`;
 
   bk.innerHTML = `
@@ -75,6 +78,16 @@ function openPreview(c) {
 
   bk.addEventListener('click', e => { if (e.target === bk) closePreview(); });
   bk.querySelector('.pv-close').addEventListener('click', closePreview);
+  // Chromium nuốt #page= khi PDF nạp chậm trong iframe — nạp xong ép điều hướng
+  // fragment lần nữa để chắc chắn nhảy đúng trang được trích.
+  const f = bk.querySelector('.pv-frame');
+  if (f && frameUrl && page > 1) {
+    f.addEventListener('load', () => {
+      setTimeout(() => {
+        try { f.contentWindow.location.replace(frameUrl + '&r=1'); } catch {}
+      }, 300);
+    });
+  }
   const snip = bk.querySelector('.pv-snip');
   if (snip) snip.querySelector('.pv-snip-label').addEventListener('click', () => {
     snip.classList.toggle('collapsed');

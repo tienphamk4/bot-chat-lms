@@ -49,11 +49,16 @@ def to_sql_vector(vector: list[float]) -> str:
 
 
 def embed_texts(
-    texts: list[str], task_type: str = TASK_DOCUMENT
+    texts: list[str],
+    task_type: str = TASK_DOCUMENT,
+    timeout_seconds: float | None = None,
+    attempts: int = 2,
 ) -> EmbedBatch | None:
     """Embed một lô văn bản. Trả None khi LLM tắt/hỏng — nơi gọi tự xử.
 
     Lô vượt BATCH_SIZE là lỗi lập trình chứ không phải lỗi dữ liệu → assert.
+    `timeout_seconds`/`attempts`: đường CHAT truyền trần ngắn (người dùng đang
+    ngồi chờ, embed hỏng thì FULLTEXT gánh); đường nạp offline giữ mặc định.
     """
     assert len(texts) <= BATCH_SIZE, f"lô tối đa {BATCH_SIZE}, nhận {len(texts)}"
     if not texts:
@@ -75,7 +80,9 @@ def embed_texts(
             config=types.EmbedContentConfig(
                 task_type=task_type,
                 output_dimensionality=settings.embed_dim,
-                http_options=_http_options(settings.llm_timeout_seconds),
+                http_options=_http_options(
+                    timeout_seconds or settings.llm_timeout_seconds, attempts=attempts
+                ),
             ),
         )
     except Exception as exc:  # pragma: no cover - phụ thuộc mạng
@@ -110,7 +117,12 @@ def embed_query(question: str) -> tuple[list[float], int] | None:
     if cached is not None:
         return cached[0], 0  # 0 token — không tốn lượt gọi nào
 
-    batch = embed_texts([question], task_type=TASK_QUERY)
+    # Trần NGẮN + 1 lần thử: quota embed đang bị lượt nạp tài liệu nền chiếm
+    # thì thà bỏ kênh vector (FULLTEXT vẫn tìm tốt) còn hơn bắt người dùng chờ
+    # backoff 8-16s — thủ phạm chính của những câu trả lời 28 giây.
+    batch = embed_texts(
+        [question], task_type=TASK_QUERY, timeout_seconds=4.0, attempts=1
+    )
     if batch is None or not batch.vectors:
         return None
 

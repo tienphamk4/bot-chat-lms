@@ -35,7 +35,7 @@ class TestMatrix:
         (doc("faculty", faculty_id=2), SV_TOAN, True),    # đúng khoa
         (doc("faculty", faculty_id=2), SV_CNTT, False),   # khác khoa
         (doc("faculty", faculty_id=2), GV_TOAN, True),    # GV cùng khoa
-        (doc("faculty", faculty_id=2), ADMIN, False),     # admin không khoa: theo luật là chặn
+        (doc("faculty", faculty_id=2), ADMIN, True),      # admin quản cả kho: xem được mọi khoa
 
         (doc("course", course_id=10), ANONYMOUS, False),
         (doc("course", course_id=10), SV_TOAN, True),     # có trong lớp
@@ -54,8 +54,22 @@ class TestMatrix:
         assert can_read_document(identity, document) is allowed
 
     def test_unknown_access_denied(self):
-        # Giá trị access lạ (dữ liệu hỏng) phải chặn, không mở
-        assert can_read_document(ADMIN, doc("something_new")) is False
+        # Giá trị access lạ (dữ liệu hỏng) phải chặn, không mở — kiểm bằng SV
+        # (admin có đường mở riêng, xem test_admin_xem_duoc_moi_tai_lieu)
+        assert can_read_document(SV_TOAN, doc("something_new")) is False
+        assert can_read_document(ANONYMOUS, doc("something_new")) is False
+
+    def test_admin_xem_duoc_moi_tai_lieu(self):
+        # Trang quản trị phải mở/xem trước được tài liệu giới hạn theo khoa —
+        # tài khoản admin thường không thuộc khoa nào nên luật khoa từng chặn
+        # oan chính người đang quản trị kho.
+        assert can_read_document(ADMIN, doc("faculty", faculty_id=99)) is True
+        assert can_read_document(ADMIN, doc("course", course_id=77)) is True
+
+    def test_truy_hoi_van_loc_quyen_cho_sinh_vien(self):
+        # Luật mở cho admin KHÔNG được nới cho vai trò khác
+        assert can_read_document(GV_TOAN, doc("faculty", faculty_id=99)) is False
+        assert can_read_document(SV_CNTT, doc("course", course_id=77)) is False
 
 
 class TestAccessClause:

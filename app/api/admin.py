@@ -476,6 +476,8 @@ def _delete_documents(root: Path, ids: list[int]) -> dict:
     if not docs:
         raise HTTPException(status_code=404, detail="Không có tài liệu nào khớp")
 
+    from ingest.preview import remove_preview
+
     removed_files = 0
     for doc in docs:
         try:
@@ -483,6 +485,7 @@ def _delete_documents(root: Path, ids: list[int]) -> dict:
             removed_files += 1
         except OSError:  # file đang bị khóa/không quyền — vẫn xóa bản ghi
             pass
+        remove_preview(root, int(doc["id"]))  # dọn cả PDF xem trước nếu có
 
     execute(f"DELETE FROM documents WHERE id IN ({placeholder})", params)
     _remove_manifest_rows(root, [d["file_path"] for d in docs])

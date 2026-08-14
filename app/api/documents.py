@@ -88,6 +88,18 @@ async def preview_document(
 
     settings = get_settings()
     relative_path = str(row["file_path"]).replace("\\", "/").lstrip("/")
+
+    # File Office không render inline được — dùng bản PDF đã convert lúc nạp
+    # (files/previews/{id}.pdf, vẫn nằm trong FILES_ROOT nên đi chung đường
+    # X-Accel-Redirect với file gốc).
+    if not relative_path.lower().endswith(".pdf"):
+        from ingest.preview import preview_path
+
+        converted = preview_path(settings.files_root, document_id)
+        if not converted.is_file():
+            raise HTTPException(status_code=404)
+        relative_path = f"previews/{document_id}.pdf"
+
     absolute = (settings.files_root / relative_path).resolve()
     root = settings.files_root.resolve()
     if not str(absolute).startswith(str(root) + os.sep) and absolute != root:
