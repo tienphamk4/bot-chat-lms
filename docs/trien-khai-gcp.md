@@ -33,9 +33,9 @@ này. Con số chỉ để ước lượng — xem hóa đơn thật ở Billing
 | Ký hiệu trong tài liệu | Giá trị | Lấy ở đâu |
 |---|---|---|
 | `PROJECT_ID` | `project-4fc51df2-b169-4533-bf5` | đã biết |
-| `PROJECT_NUMBER` | ................ | lệnh ở A2 |
-| `REGION` / `ZONE` | ví dụ `us-central1` / `us-central1-a` | A1 — **phải trùng region Cloud SQL** |
-| `CONNECTION_NAME` | `PROJECT_ID:REGION:<tên instance>` | A1 |
+| `PROJECT_NUMBER` | `320816968642` | lệnh ở A2 |
+| `REGION` / `ZONE` | `us-central1` / `us-central1-a` | A1 — đã trùng region Cloud SQL |
+| `CONNECTION_NAME` | `project-4fc51df2-b169-4533-bf5:us-central1:instance-ai` | A1 |
 | `DB_PASSWORD` | ................ | bạn tự đặt ở A8 |
 | `ADMIN_TOKEN` | ................ | bạn tự đặt ở A9 |
 | `VM_IP` | ................ | A3 |
@@ -64,12 +64,23 @@ git status -sb
 
 ## A1. Lấy thông tin Cloud SQL
 
-Console → **SQL** → bấm vào instance → trang **Overview**. Chép hai giá trị:
+**Đã lấy xong 14/08** — mọi lệnh trong tài liệu này đã điền sẵn giá trị thật,
+dán thẳng được:
 
-- **Region** (ví dụ `us-central1`) → VM **bắt buộc** đặt cùng region. Khác
-  region thì mỗi truy vấn phải đi vòng qua Internet, hỏng luôn mục tiêu
-  p95 < 800 ms của nhánh metadata.
-- **Connection name**, dạng `PROJECT_ID:REGION:tên-instance`.
+```
+NAME         REGION       DATABASE_VERSION  CONNECTION_NAME
+instance-ai  us-central1  MYSQL_8_4         project-4fc51df2-b169-4533-bf5:us-central1:instance-ai
+```
+
+VM vì thế đặt ở `us-central1-a`. Region **bắt buộc** trùng Cloud SQL: khác
+region thì mỗi truy vấn đi vòng qua Internet, hỏng luôn mục tiêu p95 < 800 ms
+của nhánh metadata.
+
+Cần lấy lại về sau:
+
+```bash
+gcloud sql instances list --format="table(name,region,databaseVersion,connectionName)"
+```
 
 ## A2. Bật API và lấy số hiệu dự án
 
@@ -96,16 +107,16 @@ Kết quả lệnh cuối là `PROJECT_NUMBER` — ghi vào bảng ở mục 0, 
 
 ## A3. IP tĩnh, VM, tường lửa
 
-IP tĩnh (thay `REGION`):
+IP tĩnh:
 
 ```bash
-gcloud compute addresses create edu-docbot-ip --region=REGION
+gcloud compute addresses create edu-docbot-ip --region=us-central1
 ```
 
-VM (thay `ZONE`; `enable-oslogin=TRUE` là bắt buộc để Phần B SSH được):
+VM (`enable-oslogin=TRUE` là bắt buộc để Phần B SSH được):
 
 ```bash
-gcloud compute instances create edu-docbot --zone=ZONE --machine-type=e2-small --image-family=ubuntu-2404-lts-amd64 --image-project=ubuntu-os-cloud --boot-disk-size=20GB --boot-disk-type=pd-balanced --address=edu-docbot-ip --tags=http-server --scopes=https://www.googleapis.com/auth/cloud-platform --metadata=enable-oslogin=TRUE
+gcloud compute instances create edu-docbot --zone=us-central1-a --machine-type=e2-small --image-family=ubuntu-2404-lts-amd64 --image-project=ubuntu-os-cloud --boot-disk-size=20GB --boot-disk-type=pd-balanced --address=edu-docbot-ip --tags=http-server --scopes=https://www.googleapis.com/auth/cloud-platform --metadata=enable-oslogin=TRUE
 ```
 
 Mở cổng 80 cho Internet, và cổng 22 **chỉ cho dải IAP** (`35.235.240.0/20` là
@@ -124,20 +135,28 @@ gcloud compute firewall-rules create allow-ssh-from-iap --allow=tcp:22 --source-
 Xem IP vừa cấp:
 
 ```bash
-gcloud compute instances describe edu-docbot --zone=ZONE --format="value(networkInterfaces[0].accessConfigs[0].natIP)"
+gcloud compute instances describe edu-docbot --zone=us-central1-a --format="value(networkInterfaces[0].accessConfigs[0].natIP)"
 ```
 
 ## A4. Quyền cho service account của VM
 
-VM dùng service account mặc định `PROJECT_NUMBER-compute@developer.gserviceaccount.com`.
+VM dùng service account mặc định `320816968642-compute@developer.gserviceaccount.com`.
 Cấp quyền nối Cloud SQL:
 
 ```bash
-gcloud projects add-iam-policy-binding project-4fc51df2-b169-4533-bf5 --member="serviceAccount:PROJECT_NUMBER-compute@developer.gserviceaccount.com" --role="roles/cloudsql.client"
+gcloud projects add-iam-policy-binding project-4fc51df2-b169-4533-bf5 --member="serviceAccount:320816968642-compute@developer.gserviceaccount.com" --role="roles/cloudsql.client"
 ```
 
-> Không cần `roles/aiplatform.user`: cấu hình này gọi Gemini bằng
-> `GEMINI_API_KEY` (xem A9). Muốn đổi sang Vertex AI thì xem Phụ lục E2.
+Và quyền gọi Gemini qua Vertex AI — nhờ nó mà `.env` trên server **không cần
+chứa khóa API nào**:
+
+```bash
+gcloud projects add-iam-policy-binding project-4fc51df2-b169-4533-bf5 --member="serviceAccount:320816968642-compute@developer.gserviceaccount.com" --role="roles/aiplatform.user"
+```
+
+> Cấp quyền xong đừng thử ngay: IAM mất **vài phút** để lan truyền. Thử sớm sẽ
+> nhận `403 PERMISSION_DENIED` trên `aiplatform.endpoints.predict` — đó là độ
+> trễ, không phải cấu hình sai. Chờ rồi thử lại trước khi đi tìm nguyên nhân khác.
 
 ## A5. Chép mã nguồn lần đầu
 
@@ -145,28 +164,38 @@ Chỉ lần này làm tay; từ Phần B trở đi GitHub Actions lo. Chạy t�
 án trên Windows:
 
 ```bash
-gcloud compute ssh edu-docbot --zone=ZONE --tunnel-through-iap --command="mkdir -p ~/src"
+gcloud compute ssh edu-docbot --zone=us-central1-a --tunnel-through-iap --quiet --command="mkdir -p /tmp/src"
 ```
 
 ```bash
-gcloud compute scp --recurse app ingest eval migrations scripts web deploy requirements.txt requirements-rerank.txt edu-docbot:~/src --zone=ZONE --tunnel-through-iap
+gcloud compute scp --recurse app ingest eval migrations scripts web deploy requirements.txt requirements-rerank.txt edu-docbot:/tmp/src --zone=us-central1-a --tunnel-through-iap --quiet
 ```
 
-Lần chạy đầu gcloud sẽ tự sinh khóa SSH và hỏi passphrase — cứ Enter bỏ trống.
+Hai điều đã vấp phải khi chạy thật:
+
+- **Đích phải là đường dẫn tuyệt đối `/tmp/src`, không được dùng `~/src`.**
+  Trên Windows `gcloud compute scp` gọi `pscp.exe`, mà pscp không nở dấu `~` →
+  báo `remote filespec ~/src: not a directory`.
+- Lần chạy đầu gcloud tự sinh khóa SSH và hỏi lưu host key — thêm `--quiet` để
+  nó tự trả lời, khỏi treo giữa chừng.
 
 ## A6. Cài đặt trong VM
 
 Mở SSH:
 
 ```bash
-gcloud compute ssh edu-docbot --zone=ZONE --tunnel-through-iap
+gcloud compute ssh edu-docbot --zone=us-central1-a --tunnel-through-iap
 ```
 
 Từ đây dán từng khối vào cửa sổ SSH.
 
 ```bash
-sudo apt update && sudo apt install -y python3.12-venv nginx rsync curl
+export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a
+sudo -E apt-get update -qq && sudo -E apt-get install -y -qq python3.12-venv nginx rsync curl
 ```
+
+(Hai biến môi trường ở dòng đầu chặn hộp thoại "cần khởi động lại dịch vụ nào"
+của Ubuntu 24.04 — thiếu chúng thì lệnh treo im khi chạy qua `ssh --command`.)
 
 Tài khoản hệ thống + thư mục. `files/` và `logs/` phải tồn tại **trước** khi
 khởi động service: `ProtectSystem=strict` liệt kê chúng trong `ReadWritePaths`,
@@ -175,8 +204,8 @@ thiếu thư mục là systemd từ chối khởi động.
 ```bash
 sudo useradd --system --shell /usr/sbin/nologin docbot 2>/dev/null; \
 sudo mkdir -p /srv/edu-docbot/{files,logs,web} && \
-sudo cp -r ~/src/{app,ingest,eval,migrations,scripts,deploy,requirements.txt,requirements-rerank.txt} /srv/edu-docbot/ && \
-sudo cp -r ~/src/web/. /srv/edu-docbot/web/
+sudo cp -r /tmp/src/{app,ingest,eval,migrations,scripts,deploy,requirements.txt,requirements-rerank.txt} /srv/edu-docbot/ && \
+sudo cp -r /tmp/src/web/. /srv/edu-docbot/web/
 ```
 
 ```bash
@@ -189,11 +218,11 @@ cd /srv/edu-docbot && sudo python3.12 -m venv venv && sudo venv/bin/pip install 
 sudo curl -Lo /usr/local/bin/cloud-sql-proxy https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.14.2/cloud-sql-proxy.linux.amd64 && sudo chmod +x /usr/local/bin/cloud-sql-proxy
 ```
 
-Cài unit rồi thay `CONNECTION_NAME` bằng giá trị ở A1:
+Cài unit; connection name đã điền sẵn trong lệnh `sed` bên dưới:
 
 ```bash
 sudo cp /srv/edu-docbot/deploy/cloud-sql-proxy.service /etc/systemd/system/ && \
-sudo sed -i "s|PROJECT:REGION:INSTANCE|CONNECTION_NAME|" /etc/systemd/system/cloud-sql-proxy.service && \
+sudo sed -i "s|PROJECT:REGION:INSTANCE|project-4fc51df2-b169-4533-bf5:us-central1:instance-ai|" /etc/systemd/system/cloud-sql-proxy.service && \
 sudo systemctl daemon-reload && sudo systemctl enable --now cloud-sql-proxy && \
 systemctl --no-pager status cloud-sql-proxy | head -5
 ```
@@ -266,9 +295,15 @@ Ba dòng đáng chú ý:
   localStorage.
 - **`DEV_SERVE_FILES=0`** — trên server nginx phục vụ file qua
   `X-Accel-Redirect`; bật cờ này là để FastAPI tự trả file, chỉ dùng lúc dev.
-- **`GEMINI_API_KEY`** giữ nguyên như máy dev. Khóa này thắng
-  `GOOGLE_CLOUD_PROJECT` ([`app/llm/vertex.py:82`](../app/llm/vertex.py:82)) —
-  đúng đường đã chạy ổn định, không đổi lúc sắp demo.
+- **`GEMINI_API_KEY` để TRỐNG.** Khác máy dev ở đúng điểm này. Để trống thì
+  code tự chuyển sang Vertex AI và xác thực bằng service account của VM
+  ([`app/llm/vertex.py:94`](../app/llm/vertex.py:94)) — server không giữ khóa
+  nào, mất VM cũng không lộ gì. Đã đo trên chính VM này (14/08):
+  `gemini-3.5-flash-lite` chạy ở `global` (ở `us-central1` báo 404),
+  `gemini-embedding-001` trả đúng 768 chiều. Điền khóa vào là code quay lại
+  đường Developer API vì khóa thắng `GOOGLE_CLOUD_PROJECT`
+  ([`vertex.py:82`](../app/llm/vertex.py:82)) — chỉ làm vậy khi cần thoát 429,
+  xem Phụ lục E2.
 
 ## A10. systemd + nginx
 
@@ -316,7 +351,7 @@ gcloud iam service-accounts create github-deployer --display-name="GitHub Action
 Bốn quyền, mỗi quyền một lệnh (thay `ZONE`, `PROJECT_NUMBER`):
 
 ```bash
-gcloud compute instances add-iam-policy-binding edu-docbot --zone=ZONE --member="serviceAccount:github-deployer@project-4fc51df2-b169-4533-bf5.iam.gserviceaccount.com" --role="roles/compute.osAdminLogin"
+gcloud compute instances add-iam-policy-binding edu-docbot --zone=us-central1-a --member="serviceAccount:github-deployer@project-4fc51df2-b169-4533-bf5.iam.gserviceaccount.com" --role="roles/compute.osAdminLogin"
 ```
 
 ```bash
@@ -328,7 +363,7 @@ gcloud projects add-iam-policy-binding project-4fc51df2-b169-4533-bf5 --member="
 ```
 
 ```bash
-gcloud iam service-accounts add-iam-policy-binding PROJECT_NUMBER-compute@developer.gserviceaccount.com --member="serviceAccount:github-deployer@project-4fc51df2-b169-4533-bf5.iam.gserviceaccount.com" --role="roles/iam.serviceAccountUser"
+gcloud iam service-accounts add-iam-policy-binding 320816968642-compute@developer.gserviceaccount.com --member="serviceAccount:github-deployer@project-4fc51df2-b169-4533-bf5.iam.gserviceaccount.com" --role="roles/iam.serviceAccountUser"
 ```
 
 Lệnh cuối hay bị bỏ sót: `gcloud compute ssh` vào một VM **có gắn service
@@ -355,7 +390,7 @@ GitHub nào trên thế giới cũng đổi được — gcloud cũng sẽ bắt
 ## B3. Cho phép repo dùng tài khoản dịch vụ
 
 ```bash
-gcloud iam service-accounts add-iam-policy-binding github-deployer@project-4fc51df2-b169-4533-bf5.iam.gserviceaccount.com --role="roles/iam.workloadIdentityUser" --member="principalSet://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github/attribute.repository/tienphamk4/bot-chat-lms"
+gcloud iam service-accounts add-iam-policy-binding github-deployer@project-4fc51df2-b169-4533-bf5.iam.gserviceaccount.com --role="roles/iam.workloadIdentityUser" --member="principalSet://iam.googleapis.com/projects/320816968642/locations/global/workloadIdentityPools/github/attribute.repository/tienphamk4/bot-chat-lms"
 ```
 
 Lấy chuỗi định danh provider để dán vào GitHub:
@@ -372,7 +407,7 @@ Tab **Secrets** → *New repository secret*:
 
 | Tên | Giá trị |
 |---|---|
-| `GCP_WIF_PROVIDER` | kết quả lệnh `describe` ở B3 (`projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github/providers/github-provider`) |
+| `GCP_WIF_PROVIDER` | kết quả lệnh `describe` ở B3 (`projects/320816968642/locations/global/workloadIdentityPools/github/providers/github-provider`) |
 | `GCP_SERVICE_ACCOUNT` | `github-deployer@project-4fc51df2-b169-4533-bf5.iam.gserviceaccount.com` |
 
 Tab **Variables** → *New repository variable*:
@@ -381,7 +416,7 @@ Tab **Variables** → *New repository variable*:
 |---|---|
 | `GCP_PROJECT` | `project-4fc51df2-b169-4533-bf5` |
 | `GCE_INSTANCE` | `edu-docbot` |
-| `GCE_ZONE` | `ZONE` của bạn, ví dụ `us-central1-a` |
+| `GCE_ZONE` | `us-central1-a` |
 
 ## B5. Chạy thử
 
@@ -475,7 +510,7 @@ Hai thứ phải sao lưu, ở hai nơi khác nhau:
   Cloud SQL backup**. Mất VM là mất sạch tài liệu đã nạp. Sao lưu định kỳ:
 
   ```bash
-  gcloud compute scp --recurse edu-docbot:/srv/edu-docbot/files ./backup-files --zone=ZONE --tunnel-through-iap
+  gcloud compute scp --recurse edu-docbot:/srv/edu-docbot/files ./backup-files --zone=us-central1-a --tunnel-through-iap
   ```
 
 ---
@@ -511,32 +546,52 @@ Certbot tự sửa `/etc/nginx/sites-available/edu-docbot`. `remote-update.sh` c
 **không** chép đè file nginx chính vì lý do này — nó chỉ in cảnh báo khi bản
 trong repo khác bản đang chạy.
 
-## E2. Đổi sang Vertex AI (bỏ API key)
+## E2. Lối thoát khi Vertex nghẽn quota (429)
 
-Cấp `roles/aiplatform.user` cho service account của VM, rồi trong `.env` **xóa
-trắng** `GEMINI_API_KEY` và giữ `GOOGLE_CLOUD_PROJECT`. Khi đó
-[`app/llm/vertex.py:94`](../app/llm/vertex.py:94) chuyển sang `vertexai=True`,
-xác thực bằng ADC của VM, không cần file khóa.
+Cấu hình mặc định đi đường Vertex AI + ADC. Nếu gặp `429 RESOURCE_EXHAUSTED`
+rải rác, có hai cách, thử theo thứ tự:
 
-Lưu ý hai `location` khác nhau: `LLM_LOCATION=global` cho model sinh,
-`EMBED_LOCATION=us-central1` cho `gemini-embedding-001` — model embedding
-không phục vụ ở `global`. Đổi xong phải nâng quota Vertex (IAM & Admin →
-Quotas → lọc *Vertex AI API*), nếu không sẽ gặp 429 rải rác.
+**Cách 1 — nâng quota Vertex.** Console → **IAM & Admin → Quotas & System
+Limits** → lọc *Service: Vertex AI API*. Hai hạn mức cần nâng:
+
+| Quota | Chiều cần đúng | Đề xuất |
+|---|---|---|
+| Generate content requests per minute per project per base model | base_model `gemini-3.5-flash-lite`, region `global` | 200/phút |
+| Embed content requests per minute | `gemini-embedding-001`, region `us-central1` | 200/phút |
+
+Mức nhỏ thường duyệt tự động trong vài phút.
+
+**Cách 2 — quay về Developer API.** Điền `GEMINI_API_KEY` vào `.env` rồi
+`sudo systemctl restart edu-docbot`. Khóa thắng `GOOGLE_CLOUD_PROJECT`
+([`vertex.py:82`](../app/llm/vertex.py:82)) nên không cần sửa gì khác — đây là
+hàng đợi quota riêng, chuyển làn là thoát. Mất 30 giây, dùng được ngay giữa
+buổi demo.
+
+### Kết quả đo trên VM này (14/08/2026)
+
+| Model | `global` | `us-central1` |
+|---|---|---|
+| `gemini-3.5-flash-lite` | chạy | **404** — không phục vụ ở đây |
+| `gemini-2.5-flash-lite` | chạy | chạy |
+| `gemini-embedding-001` (768 chiều) | chạy | chạy |
+
+Vì vậy `LLM_LOCATION=global` là bắt buộc với model 3.5, còn
+`EMBED_LOCATION=us-central1` giữ nguyên cho gần Cloud SQL.
 
 ## E3. Bật rerank
 
 Cần RAM 4 GB → đổi máy sang `e2-medium` trước:
 
 ```bash
-gcloud compute instances stop edu-docbot --zone=ZONE
+gcloud compute instances stop edu-docbot --zone=us-central1-a
 ```
 
 ```bash
-gcloud compute instances set-machine-type edu-docbot --zone=ZONE --machine-type=e2-medium
+gcloud compute instances set-machine-type edu-docbot --zone=us-central1-a --machine-type=e2-medium
 ```
 
 ```bash
-gcloud compute instances start edu-docbot --zone=ZONE
+gcloud compute instances start edu-docbot --zone=us-central1-a
 ```
 
 Rồi trên VM: cài `requirements-rerank.txt` vào venv, đặt `RERANK_ENABLED=1`
