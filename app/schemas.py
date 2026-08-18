@@ -18,6 +18,11 @@ class Intent(str, Enum):
     ask_content = "ask_content"
     out_of_scope = "out_of_scope"
     greeting = "greeting"
+    # CHỈ tầng luật sinh ra hai giá trị này; enum của router LLM cố ý không có.
+    # Model gặp câu chửi sẽ phán out_of_scope, gặp câu cụt sẽ đoán bừa một ý
+    # định — cả hai đều là mức hạ cấp chấp nhận được.
+    abusive = "abusive"
+    clarify = "clarify"
 
 
 class DocType(str, Enum):
@@ -95,6 +100,9 @@ class ChatContext(BaseModel):
 
     screen: Literal["lesson", "advisory"] | None = None
     course_code: str | None = Field(None, max_length=32)
+    # Bot nào đang trả lời. Quyết định câu chào, câu từ chối, phạm vi tài liệu
+    # và đầu mối liên hệ — tất cả đọc từ bảng `assistants`, không nằm trong mã.
+    assistant: str | None = Field(None, max_length=64)
 
 
 class ChatRequest(BaseModel):
@@ -214,6 +222,17 @@ class CourseOut(BaseModel):
     aliases: list[str] = Field(default_factory=list)
     offerings: list[Offering] = Field(default_factory=list)
     document_count: int = 0
+
+
+class AssistantOut(BaseModel):
+    """Một trợ lý ảo — frontend đọc để tự dựng bong bóng và popup."""
+
+    slug: str
+    name: str
+    tagline: str = ""
+    placeholder: str = ""
+    welcome: dict[str, Any] = Field(default_factory=dict)
+    brand: dict[str, str] = Field(default_factory=dict)
 
 
 class FeedbackIn(BaseModel):

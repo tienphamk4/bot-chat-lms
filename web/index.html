@@ -3,28 +3,46 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>EDU-DOCBOT — LMS · tra cứu tài liệu</title>
-<link rel="stylesheet" href="/chat.css">
+<title>EDU-DOCBOT — trợ lý ảo</title>
+<link rel="stylesheet" href="/chat.css?v=20260818d">
 </head>
 <body>
-<header>
-  <div class="brand">
-    <div class="logo">🎓</div>
-    <div>
-      <h1>EDU-DOCBOT</h1>
-      <span class="tag">Tra cứu &amp; hỏi đáp tài liệu học tập</span>
-    </div>
-  </div>
-  <span class="spacer"></span>
-  <label title="Giả lập vị trí người dùng trong LMS — app nhúng sẽ truyền tự động">
-    <span class="lbl">Ngữ cảnh</span>
-    <select id="ctx">
-      <option value="">🏠 Trang chủ LMS</option>
-    </select>
+
+<!-- Trang chủ nhà: đứng thay chỗ trang thật mà widget sẽ được nhúng vào. -->
+<main class="host">
+  <p class="host-eyebrow">Cổng thông tin</p>
+  <h1 id="host-title">Trợ lý ảo</h1>
+  <p id="intro">Đang tải danh sách trợ lý…</p>
+
+  <!-- Thẻ giới thiệu từng bot — dựng từ chính bản ghi trong bảng assistants -->
+  <div class="bot-grid" id="bot-grid"></div>
+
+</main>
+
+<!-- Lối vào trang quản trị: góc trên bên phải, tách khỏi mạch nội dung. -->
+<a class="host-admin" href="/admin.html">Trang quản trị</a>
+
+<script src="/chat.js?v=20260818d"></script>
+<script src="/widget.js?v=20260818d"></script>
+<script>
+// Bong bóng VÀ thẻ giới thiệu đều dựng từ /api/v1/assistants — không khai bot
+// nào trong mã. Thêm một dòng vào bảng assistants là trang tự mọc thêm cả thẻ
+// lẫn bong bóng.
+//
+// ?bot=<slug> để nhúng đúng một trợ lý vào một trang cụ thể.
+
+const params = new URLSearchParams(location.search);
+const only = params.get('bot');
+
+// Nhúng trong trang quản trị thì bỏ nút "Trang quản trị" — đang đứng ở đó rồi.
+if (params.has('embed')) document.querySelector('.host-admin')?.remove();
+
+const DEMO_SHEET = `
+  <label>Ngữ cảnh
+    <select class="ctx"><option value="">Trang chủ</option></select>
   </label>
-  <label>
-    <span class="lbl">Đăng nhập thử</span>
-    <select id="user">
+  <label>Đăng nhập thử
+    <select class="user">
       <option value="">Khách (chỉ tài liệu public)</option>
       <option value="1">sv_toan — SV khoa Toán</option>
       <option value="2">sv_cntt — SV khoa CNTT</option>
@@ -32,61 +50,103 @@
       <option value="4">admin</option>
     </select>
   </label>
-  <a class="pill-link" href="/tuvan.html">💬 Tư vấn học vụ</a>
-  <a class="pill-link" href="/admin.html">⚙️ Quản trị</a>
-</header>
+  <p class="sheet-note">Chỉ có ở bản chạy thử. Hệ thống thật truyền sẵn người dùng và môn đang mở.</p>`;
 
-<div id="log"></div>
+// `esc()` đã có sẵn trong chat.js — khai lại ở đây là "Identifier already
+// declared" và cả script chết ngay dòng đầu, trang trắng không một bong bóng.
 
-<form id="form">
-  <div class="composer">
-    <input id="input" type="text" autocomplete="off"
-           placeholder="Hỏi về tài liệu, nội dung môn học…">
-    <button id="send" type="submit" title="Gửi">➤</button>
-  </div>
-</form>
-<div class="hint">Trả lời dựa trên tài liệu trong kho, luôn kèm nguồn và số trang. Chọn ngữ cảnh bài học để hỏi sát môn đang mở.</div>
+fetch('/api/v1/assistants')
+  .then(r => r.ok ? r.json() : [])
+  .then(list => {
+    if (only) list = list.filter(b => b.slug === only);
 
-<script src="/chat.js"></script>
-<script>
-// Trang LMS: danh tính theo ô đăng nhập thử; ngữ cảnh theo trang đang mở
-// (trang chủ hoặc bài học một môn — app LMS thật sẽ truyền tự động).
-const userSelect = document.getElementById('user');
-const ctxSelect = document.getElementById('ctx');
+    document.getElementById('host-title').textContent =
+      list.length === 1 ? list[0].name : 'Chọn trợ lý cho việc bạn cần';
+    document.getElementById('intro').textContent = list.length
+      ? 'Mỗi trợ lý đọc kho tài liệu riêng và giữ cuộc trò chuyện riêng, không lẫn '
+        + 'vào nhau. Bấm một thẻ bên dưới, hoặc dùng bong bóng ở góc phải.'
+      : 'Chưa có trợ lý nào được bật. Vào trang quản trị để thêm.';
 
-(async () => {
-  try {
-    const res = await fetch('/api/v1/courses?limit=100');
-    if (!res.ok) return;
-    for (const c of await res.json()) {
-      const opt = document.createElement('option');
-      opt.value = 'lesson:' + c.code;
-      opt.textContent = '📘 Bài học · ' + c.code + ' — ' + c.name;
-      ctxSelect.appendChild(opt);
-    }
-  } catch {}
-})();
+    const grid = document.getElementById('bot-grid');
 
-initChat({
-  getHeaders: () => userSelect.value ? { 'X-User-Id': userSelect.value } : {},
-  getContext: () => {
-    const v = ctxSelect.value;
-    if (v.startsWith('lesson:')) return { screen: 'lesson', course_code: v.slice(7) };
-    return null;
-  },
-  welcome: {
-    icon: '🎓',
-    title: 'Bạn cần tìm tài liệu gì?',
-    text: 'Mình tìm giáo trình, slide, đề cương, đề thi theo môn — và trả lời câu hỏi '
-      + 'về nội dung bên trong tài liệu, luôn kèm nguồn với số trang.',
-    chips: [
-      'Giáo trình Giải tích 1',
-      'Môn OOP có những tài liệu gì?',
-      'Kế thừa trong lập trình hướng đối tượng là gì?',
-      'PHP hoạt động như thế nào?',
-    ],
-  },
-});
+    list.forEach((bot, index) => {
+      const wantsLogin = bot.slug === 'tai-lieu';   // bot duy nhất đọc theo quyền
+      const brand = bot.brand || {};
+      let panelRef = null;
+
+      // --- Thẻ giới thiệu ---------------------------------------------------
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = 'bot-card';
+      card.style.cssText =
+        `--c1:${brand.c1 || '#6c4de6'}; --c2:${brand.c2 || '#5a3fd0'};`
+        + `--c-soft:${brand.soft || '#efeaff'}; --c-ink:${brand.ink || '#4a32b8'};`;
+      const asks = ((bot.welcome && bot.welcome.chips) || []).slice(0, 3);
+      card.innerHTML = `
+        <div class="head">
+          <span class="ava">${esc((bot.welcome && bot.welcome.icon) || '💬')}</span>
+          <span>
+            <h3>${esc(bot.name)}</h3>
+            <span class="tag">${esc(bot.tagline || '')}</span>
+          </span>
+        </div>
+        <p class="desc">${esc((bot.welcome && bot.welcome.text) || '')}</p>
+        ${asks.length ? `<div class="asks">${asks.map(a => `<div class="ask">${esc(a)}</div>`).join('')}</div>` : ''}
+        <span class="go">Hỏi trợ lý này <span class="arrow">→</span></span>`;
+      grid.appendChild(card);
+
+      // --- Widget ------------------------------------------------------------
+      mountBot({
+        slug: bot.slug,
+        name: bot.name,
+        sub: bot.tagline,
+        icon: brand.icon || 'robot',
+        brand,
+        placeholder: bot.placeholder,
+        welcome: bot.welcome,
+        sheet: wantsLogin ? DEMO_SHEET : null,
+
+        onReady: (p) => {
+          panelRef = p;
+          const ctx = p.querySelector('.ctx');
+          if (!ctx) return;
+          fetch('/api/v1/courses?limit=100')
+            .then(r => r.ok ? r.json() : [])
+            .then(courses => {
+              for (const c of courses) {
+                const opt = document.createElement('option');
+                opt.value = 'lesson:' + c.code;
+                opt.textContent = 'Bài học · ' + c.code + ' — ' + c.name;
+                ctx.appendChild(opt);
+              }
+            })
+            .catch(() => {});
+        },
+
+        // Đọc qua biến giữ panel của CHÍNH bot này, không querySelector toàn
+        // trang: nhiều popup cùng tồn tại, chọn nhầm là gửi sai danh tính.
+        getHeaders: () => {
+          const v = panelRef?.querySelector('.user')?.value;
+          return v ? { 'X-User-Id': v } : {};
+        },
+        getContext: () => {
+          const v = panelRef?.querySelector('.ctx')?.value || '';
+          return v.startsWith('lesson:')
+            ? { screen: 'lesson', course_code: v.slice(7) }
+            : {};
+        },
+      });
+
+      // Bấm thẻ = bấm đúng bong bóng của bot đó. Bong bóng xếp theo thứ tự
+      // mount nên chỉ số trùng chỉ số trong danh sách.
+      card.addEventListener('click', () =>
+        document.querySelectorAll('.launcher')[index]?.click());
+    });
+  })
+  .catch(() => {
+    document.getElementById('intro').textContent =
+      'Không tải được danh sách trợ lý — kiểm tra máy chủ rồi tải lại trang.';
+  });
 </script>
 </body>
 </html>

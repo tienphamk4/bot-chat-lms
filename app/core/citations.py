@@ -11,6 +11,7 @@ import re
 from typing import Any
 
 from app.core.render import download_url
+from ingest.context import clean_heading
 from app.schemas import Citation, DocType
 
 # Bắt cả [1] lẫn [1, 6] — model thỉnh thoảng gộp nhiều nguồn một ngoặc dù
@@ -118,7 +119,10 @@ def _to_citation(n: int, chunk: dict[str, Any]) -> Citation:
         semester=chunk.get("semester"),
         page=chunk.get("page_from"),
         page_to=chunk.get("page_to"),
-        heading_path=chunk.get("heading_path"),
+        # Lọc rác: bộ nhận diện heading gặp tài liệu dàn trang đồ họa hay bắt
+        # nhầm câu văn thường làm tiêu đề, và chuỗi đó hiện thẳng dưới trích
+        # dẫn cho người dùng đọc.
+        heading_path=clean_heading(chunk.get("heading_path")),
         url=download_url(document_id),
         snippet=_snippet(chunk.get("content")),
         preview_url=preview_url,

@@ -36,9 +36,9 @@ này. Con số chỉ để ước lượng — xem hóa đơn thật ở Billing
 | `PROJECT_NUMBER` | `320816968642` | lệnh ở A2 |
 | `REGION` / `ZONE` | `us-central1` / `us-central1-a` | A1 — đã trùng region Cloud SQL |
 | `CONNECTION_NAME` | `project-4fc51df2-b169-4533-bf5:us-central1:instance-ai` | A1 |
-| `DB_PASSWORD` | ................ | bạn tự đặt ở A8 |
-| `ADMIN_TOKEN` | ................ | bạn tự đặt ở A9 |
-| `VM_IP` | ................ | A3 |
+| `DB_PASSWORD` | đã đặt (ngẫu nhiên 31 ký tự, xoay ngày 14/08) | dòng `DB_DSN` trong `.env` |
+| `ADMIN_TOKEN` | đã đặt (xoay ngày 14/08) | `sudo grep ADMIN_TOKEN /srv/edu-docbot/.env` |
+| `VM_IP` | `34.69.71.91` | A3 |
 
 ---
 
@@ -447,8 +447,12 @@ khoảng một phút.
 
 ## C2. Nạp tài liệu
 
-Kho hiện **trống** (xóa chủ động ngày 14/08, file gốc còn ở
-`files_backup_20260814/` trên máy dev). Ba đường:
+> **Nạp trên VM, đừng nạp trên máy dev.** Hai máy dùng chung Cloud SQL nhưng
+> đĩa riêng. Nạp ở máy dev thì CSDL có bản ghi và chunk (chat trả lời được),
+> nhưng file thật nằm lại trên đĩa máy dev — bấm xem nguồn trên web sẽ ra 404.
+> Đúng lỗi đã gặp ngày 14/08, phải chép tay 17 MB sang mới hết.
+
+Ba đường nạp:
 
 1. **Trang admin** `http://VM_IP/admin.html` → nút Upload. Dễ nhất.
 2. **Chép hàng loạt rồi quét** — đặt file vào `/srv/edu-docbot/files/` rồi:
@@ -478,6 +482,23 @@ bản, chạy lại máy móc là hỏng dữ liệu). Khi có migration mới, 
 ```bash
 mysql -h 127.0.0.1 -P 3306 -u root -p edu_docbot < /srv/edu-docbot/migrations/00X_ten_file.sql
 ```
+
+Tính tới 18/08/2026 có **8 migration**, chạy theo đúng thứ tự số:
+
+| File | Nội dung |
+|---|---|
+| `001_init.sql` | Schema gốc: khoa, môn, tài liệu, chunk, cache, quota, nhật ký |
+| `002_seed_demo.sql` | Dữ liệu mẫu để chạy thử |
+| `003_vector_cloudsql.sql` | Cột `embedding VECTOR(768)` theo cú pháp Cloud SQL |
+| `004_assistants.sql` | Bảng trợ lý ảo — tên, giọng, phạm vi, liên hệ, màu |
+| `005_assistant_documents.sql` | Quan hệ nhiều-nhiều tài liệu ↔ trợ lý |
+| `006_blocked_topics.sql` | Chủ đề bị chặn theo từng trợ lý |
+| `007_assistant_access_levels.sql` | Mức quyền trợ lý phục vụ (nhiều lựa chọn) |
+| `008_assistant_gen_params.sql` | Tham số sinh trả lời theo từng trợ lý |
+
+Từ `004` trở đi đều liên quan tới nền tảng nhiều trợ lý. Bỏ sót một file là
+trang quản trị báo lỗi cột không tồn tại, còn chat thì rơi về persona mặc định
+— hệ thống vẫn chạy nhưng mọi trợ lý nói cùng một giọng.
 
 ## C4. Log và trạng thái
 
@@ -515,6 +536,27 @@ Hai thứ phải sao lưu, ở hai nơi khác nhau:
 
 ---
 
+## C7. Trạng thái bảo mật hiện tại (14/08/2026)
+
+| Mặt | Trạng thái |
+|---|---|
+| Cloud SQL mở ra Internet | **Đã đóng.** `authorized-networks` chỉ còn `59.153.220.155/32` (IP máy dev, để DBeaver vào được). Trước đó là `0.0.0.0/0` |
+| Mật khẩu `root` | Đã xoay 14/08 — chuỗi ngẫu nhiên 31 ký tự. Bản cũ từng lộ trong ảnh chụp màn hình |
+| `ADMIN_TOKEN` | Đã xoay 14/08, cùng lý do |
+| Khóa Gemini trên server | **Không có.** VM xác thực qua Vertex AI + ADC |
+| Cổng 22 của VM | Chỉ mở cho dải IAP `35.235.240.0/20`, không mở ra Internet |
+| Truyền tải web | HTTP trần — mã quản trị đi dạng rõ. Gắn HTTPS (E1) khi có tên miền |
+
+Hai việc còn nợ, không gấp nhưng nên làm:
+
+- **VM đang nối CSDL bằng `root`.** Tạo user `docbot` quyền hẹp theo A8 rồi đổi
+  một dòng `DB_DSN` là xong. Hiện tiến trình mở ra Internet đang cầm toàn quyền
+  trên mọi database của instance.
+- **CGNAT làm IP máy dev đổi theo thời gian.** Khi DBeaver timeout, lấy IP thật
+  trong thông báo lỗi MySQL rồi chạy lại lệnh patch — xem bảng Phần D.
+
+---
+
 # PHẦN D — Khắc phục sự cố
 
 | Triệu chứng | Nguyên nhân thường gặp | Cách xử lý |
@@ -528,6 +570,9 @@ Hai thứ phải sao lưu, ở hai nơi khác nhau:
 | Actions đỏ ở bước ssh: `Permission denied (publickey)` | Chưa bật OS Login, hoặc thiếu `osAdminLogin`/`serviceAccountUser` | Kiểm tra metadata `enable-oslogin=TRUE` (A3) và bốn binding ở B1 |
 | Actions đỏ: `bad interpreter: /usr/bin/env bash^M` | `remote-update.sh` bị commit dạng CRLF | `.gitattributes` đã chặn; nếu file lỡ vào repo sai: `git rm --cached deploy/remote-update.sh && git add deploy/remote-update.sh` |
 | Trang admin không hỏi mã | `ADMIN_TOKEN` trống | Điền vào `.env` rồi `sudo systemctl restart edu-docbot` |
+| Trang chat đứng hình, console báo `crypto.randomUUID is not a function` | Phục vụ qua `http://<IP>/` — `randomUUID` chỉ tồn tại trong secure context (HTTPS hoặc localhost), nên máy dev không lộ lỗi này | Đã vá sẵn: `web/chat.js` dùng `newSessionId()` có đường lui bằng `getRandomValues`. Gặp lại nghĩa là bản trên server cũ hơn repo |
+| `Access denied for user ... (using password: YES)` dù mật khẩu "đúng" | Mật khẩu dán qua terminal bị rụng ký tự, hay gặp nhất với `%` và `@` | Đừng gõ lại bằng mắt — so vân tay: `python -c "import hashlib;print(hashlib.sha256(b'...').hexdigest()[:12])"` ở hai đầu. Ký tự đặc biệt trong DSN phải mã hóa URL (`@` → `%40`) |
+| Máy dev / DBeaver timeout sau khi siết `authorized-networks` | ISP dùng CGNAT: IP mà dịch vụ tra-IP qua HTTPS báo **khác** IP thật khi mở phiên 3306 | Đừng tin `api.ipify.org`. Lấy IP thật từ chính thông báo lỗi MySQL — `Access denied for user 'root'@'<IP thật>'` — rồi `gcloud sql instances patch instance-ai --authorized-networks=<IP>/32`. CGNAT đổi IP theo thời gian, timeout lại thì lặp lại đúng cách này |
 | Tài liệu nạp xong nhưng chat bảo không tìm thấy | Chưa `resync-derived` sau khi thêm môn, hoặc chunk chưa có embedding | `python -m ingest.cli resync-derived`; xem trạng thái tài liệu ở trang admin |
 
 ---

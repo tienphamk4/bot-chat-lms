@@ -3,774 +3,1271 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>EDU-DOCBOT — Quản trị kho tài liệu</title>
+<title>Quản trị — EDU-DOCBOT</title>
 <style>
-  :root {
-    --bg: #f6f7f9; --panel: #ffffff; --ink: #17202b; --muted: #6b7686;
-    --accent: #2c5cd8; --accent-ink: #234db8; --accent-soft: #e6edfc;
-    --border: #e4e8ee; --ok: #16a34a; --warn: #d97706; --err: #dc2626;
-    --shadow: 0 1px 2px rgba(16, 24, 40, .05), 0 4px 16px rgba(16, 24, 40, .06);
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
-         background: var(--bg); color: var(--ink); min-height: 100vh; }
-  header { position: sticky; top: 0; z-index: 10; padding: 10px 22px;
-           background: rgba(255,255,255,.94); backdrop-filter: blur(6px);
-           border-bottom: 1px solid var(--border);
-           display: flex; align-items: center; gap: 12px; }
-  .brand { display: flex; align-items: center; gap: 10px; }
-  .brand .logo {
-    width: 34px; height: 34px; border-radius: 10px;
-    background: linear-gradient(135deg, var(--accent), var(--accent-ink));
-    color: #fff; display: grid; place-items: center; font-size: 17px;
-  }
-  .brand h1 { font-size: 15px; margin: 0; line-height: 1.2; }
-  .brand .sub { font-size: 12px; color: var(--muted); display: block; }
-  header a.back { margin-left: auto; font-size: 13px; color: var(--accent);
-             text-decoration: none; border: 1px solid var(--border);
-             border-radius: 999px; padding: 6px 14px; transition: all .15s; }
-  header a.back:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
-  main { max-width: 1500px; width: 96vw; margin: 0 auto; padding: 20px 18px 48px;
-         display: flex; flex-direction: column; gap: 16px; }
+:root {
+  --page: #f4f4f7; --panel: #fff; --ink: #1b1a23; --muted: #6c6b7a;
+  --faint: #9a99a8; --line: #e8e7ee; --line-soft: #f2f1f6;
+  --accent: #6c4de6; --accent-soft: #efeaff; --accent-ink: #4a32b8;
+  --ok: #0b7d63; --ok-soft: #e2f2ee;
+  --warn: #a65a0e; --warn-soft: #faeee1;
+  --danger: #b0233f; --danger-soft: #fbe8ec;
+  --r: 11px;
 
-  /* Hàng thống kê nhanh */
-  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
-  .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 13px;
-          padding: 12px 16px; box-shadow: var(--shadow); }
-  .stat .n { font-size: 22px; font-weight: 700; line-height: 1.2; }
-  .stat .t { font-size: 12px; color: var(--muted); }
-  .stat.warn .n { color: var(--warn); }
-  .stat.err .n { color: var(--err); }
-  .stat.ok .n { color: var(--ok); }
+  /* Windows 11 có sẵn Segoe UI Variable — cùng họ Segoe nhưng nét cân và
+     sạch hơn hẳn ở cỡ nhỏ. Display cho tiêu đề (chữ khít, chắc), Text cho
+     phần đọc. Máy không có thì rơi về Segoe UI như cũ, không hỏng gì. */
+  --sans: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  --display: "Segoe UI Variable Display", "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; font-family: var(--sans);
+  background: var(--page); color: var(--ink);
+  font-size: 15px; line-height: 1.55;
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+  display: grid; grid-template-columns: 252px 1fr; min-height: 100vh;
+}
+h1, h2, h3, .tile .v { font-family: var(--display); }
 
-  section { background: var(--panel); border: 1px solid var(--border);
-            border-radius: 14px; padding: 16px 18px; box-shadow: var(--shadow); }
-  h2 { font-size: 14px; margin: 0 0 4px; display: flex; align-items: center; gap: 10px; }
-  .hint { font-size: 12.5px; color: var(--muted); margin: 0 0 12px; line-height: 1.6; }
-  .hint b { color: var(--ink); }
-  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  select, input[type=text] {
-    font-size: 13px; height: 36px; padding: 0 10px; border: 1px solid var(--border);
-    border-radius: 9px; background: var(--panel); color: var(--ink); outline: none;
-  }
-  select:focus, input[type=text]:focus { border-color: var(--accent); }
-  button { font-size: 13px; height: 36px; padding: 0 16px; border: 0;
-           border-radius: 9px; background: var(--accent); color: #fff;
-           cursor: pointer; font-weight: 600; transition: filter .15s; }
-  button:hover { filter: brightness(1.08); }
-  button:disabled { opacity: .5; cursor: default; }
-  button.ghost { background: var(--panel); color: var(--accent);
-                 border: 1px solid var(--border); font-weight: 500; }
-  button.ghost:hover { border-color: var(--accent); filter: none; background: var(--accent-soft); }
-  button.warn { background: #fff7ed; color: var(--warn); border: 1px solid #fdba74; }
-  button.warn:hover { background: var(--warn); color: #fff; filter: none; }
-  button.danger { background: #fef2f2; color: var(--err); border: 1px solid #fca5a5; }
-  button.danger:hover { background: var(--err); color: #fff; filter: none; }
+/* ===== Sidebar ============================================================ */
+.side {
+  background: var(--panel); border-right: 1px solid var(--line);
+  display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh;
+}
+.side-brand { padding: 18px 18px 14px; display: flex; align-items: center; gap: 10px; }
+.side-brand .mark {
+  width: 34px; height: 34px; border-radius: 10px; flex: none;
+  background: linear-gradient(140deg, var(--accent), #5a3fd0);
+  display: grid; place-items: center; color: #fff; font-size: 16px;
+}
+.side-brand b { font-size: 15px; font-weight: 650; display: block; line-height: 1.2; letter-spacing: -.01em; }
+.side-brand span { font-size: 12.5px; color: var(--muted); }
+.side-nav { padding: 6px 10px; display: flex; flex-direction: column; gap: 2px; }
+.nav-item {
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+  font: inherit; font-size: 14.5px; color: var(--ink); background: none;
+  border: 0; border-radius: 9px; padding: 10px 12px; cursor: pointer;
+}
+.nav-item:hover { background: var(--line-soft); }
+.nav-item.on { background: var(--accent-soft); color: var(--accent-ink); font-weight: 650; }
+.nav-item .ico { width: 18px; text-align: center; font-size: 14px; }
+.nav-item .count {
+  margin-left: auto; font-size: 12px; color: var(--muted);
+  background: var(--line-soft); border-radius: 6px; padding: 1px 7px; min-width: 22px; text-align: center;
+}
+.nav-item.on .count { background: #fff; color: var(--accent-ink); }
+.side-foot { margin-top: auto; padding: 14px 16px; border-top: 1px solid var(--line); }
+.side-foot a { font-size: 13px; color: var(--muted); text-decoration: none; display: block; padding: 4px 0; }
+.side-foot a:hover { color: var(--accent); }
 
-  .table-scroll { overflow-x: auto; margin-top: 8px; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 640px; }
-  th, td { text-align: left; padding: 10px 8px; border-top: 1px solid var(--border);
-           vertical-align: top; }
-  th { color: var(--muted); font-weight: 600; border-top: 0; font-size: 11.5px;
-       text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
-  tbody tr { transition: background .1s; }
-  tbody tr:hover { background: #f7f9fd; }
-  td .err { color: var(--muted); font-size: 12px; max-width: 380px; line-height: 1.5;
-            margin-top: 4px; }
-  .badge { display: inline-block; font-size: 11.5px; font-weight: 600;
-           border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
-  .badge.indexed { background: #dcfce7; color: #166534; }
-  .badge.pending, .badge.pending_review { background: #fef3c7; color: #92400e; }
-  .badge.failed, .badge.needs_ocr { background: #fee2e2; color: #991b1b; }
-  .badge.vec-ok { background: #dcfce7; color: #166534; }
-  .badge.vec-miss { background: #fef3c7; color: #92400e; }
-  #uplog, #scanlog { font-size: 12.5px; margin-top: 12px; white-space: pre-wrap;
-                     color: var(--muted); background: #f7f9fd; border-radius: 9px;
-                     padding: 10px 12px; line-height: 1.7; }
-  #uplog:empty, #scanlog:empty { display: none; }
-  .file-name { word-break: break-word; font-weight: 500; }
-  input[type=checkbox] { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
+/* ===== Vùng nội dung ====================================================== */
+/* Không kẹp bề ngang: đây là bảng điều khiển, màn rộng thì dùng hết màn.
+   Riêng đoạn văn mô tả vẫn giữ trần dòng ở .page-head p cho dễ đọc. */
+.main { padding: 26px 32px 70px; min-width: 0; }
+.page-head { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 18px; }
+.page-head h1 { font-size: 25px; font-weight: 700; letter-spacing: -.022em; margin: 0 0 5px; }
+.page-head p { font-size: 14.5px; color: var(--muted); margin: 0; max-width: 68ch; line-height: 1.6; }
+.page-head .grow { margin-left: auto; }
+.sec { display: none; }
+.sec.on { display: block; }
 
-  /* Popup nạp tài liệu */
-  .modalbk {
-    position: fixed; inset: 0; background: rgba(15, 23, 42, .45);
-    display: flex; align-items: flex-start; justify-content: center;
-    padding: 3vh 16px; z-index: 50; backdrop-filter: blur(2px);
-  }
-  .modalbk[hidden] { display: none; }
-  .modal {
-    background: var(--panel); border-radius: 16px; box-shadow: var(--shadow);
-    width: min(1100px, 96vw); max-height: 92vh; overflow-y: auto;
-    padding: 20px 26px;
-  }
-  .modal-head { display: flex; align-items: center; justify-content: space-between;
-                margin-bottom: 6px; font-size: 15px; }
-  .drop {
-    border: 2px dashed var(--border); border-radius: 12px; padding: 26px 16px;
-    text-align: center; cursor: pointer; color: var(--muted); font-size: 13px;
-    transition: all .15s; background: #fafbfd;
-  }
-  .drop:hover, .drop.over { border-color: var(--accent); background: var(--accent-soft);
-                            color: var(--ink); }
-  .drop b { color: var(--ink); }
-  .drop-icon { font-size: 26px; margin-bottom: 6px; }
-  .drop-sub { font-size: 11.5px; margin-top: 4px; }
-  /* Thanh tiến độ nạp: pha tải lên (%) và pha xử lý nền (chạy vô định) */
-  .pbar {
-    display: inline-block; width: 74px; height: 8px; background: var(--border);
-    border-radius: 999px; overflow: hidden; vertical-align: middle; margin-right: 6px;
-  }
-  .pfill { height: 100%; width: 0%; background: var(--accent); border-radius: 999px;
-           transition: width .2s; }
-  .pbar.indet .pfill { width: 40%; animation: indet 1.1s ease-in-out infinite; }
-  @keyframes indet { 0% { margin-left: -40%; } 100% { margin-left: 100%; } }
-  .plabel { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
-  /* Nút thao tác dạng icon trong bảng */
-  .icon-btn {
-    background: var(--panel); border: 1px solid var(--border); color: var(--ink);
-    height: 30px; width: 34px; padding: 0; border-radius: 8px; font-size: 15px;
-    line-height: 1; cursor: pointer; transition: all .15s;
-  }
-  .icon-btn:hover { border-color: var(--accent); background: var(--accent-soft); filter: none; }
-  @media (max-width: 640px) {
-    main { padding: 12px 10px 32px; }
-    section { padding: 12px; }
-  }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); }
+.card + .card { margin-top: 16px; }
+.card-head {
+  padding: 12px 16px; border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; gap: 10px;
+}
+.card-head h2 { font-size: 15.5px; margin: 0; font-weight: 650; letter-spacing: -.01em; }
+.card-head .grow { margin-left: auto; }
+.card-body { padding: 16px; }
+
+/* ===== Thẻ số ============================================================= */
+/* Ngưỡng 150px làm màn rộng tính ra 8 cột trong khi chỉ có 6 thẻ — thừa hai
+   ô trống bên phải. 200px cho ra đúng 6 cột ở màn 1600 và tự xuống dòng ở màn hẹp. */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 13px; }
+.tile { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 16px 18px; }
+.tile .k { font-size: 11.5px; font-weight: 600; letter-spacing: .085em; text-transform: uppercase; color: var(--faint); }
+.tile .v { font-size: 32px; font-weight: 700; line-height: 1.1; letter-spacing: -.03em; margin-top: 7px; font-variant-numeric: tabular-nums; }
+.tile .n { font-size: 13px; color: var(--muted); margin-top: 3px; }
+.tile.warn .v { color: var(--warn); }
+.tile.ok .v { color: var(--ok); }
+
+/* ===== Bảng =============================================================== */
+.scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+thead th {
+  font-size: 11px; letter-spacing: .085em; text-transform: uppercase; color: var(--faint);
+  font-weight: 600; text-align: left; padding: 11px 13px; border-bottom: 1px solid var(--line);
+  white-space: nowrap; background: var(--panel); position: sticky; top: 0;
+}
+tbody td { padding: 12px 13px; border-bottom: 1px solid var(--line-soft); vertical-align: middle; }
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr:hover { background: #fafafd; }
+td.tight { width: 1%; white-space: nowrap; }
+/* Cột tài liệu: 400px, dài hơn thì cắt bằng dấu ba chấm. Rê chuột vào dòng
+   thì thả cho xuống dòng hiện trọn tên — tên tài liệu thật hay dài quá khổ,
+   mà cắt cứng thì không phân biệt nổi hai bản cùng môn. */
+.doc-title {
+  font-weight: 620; max-width: 400px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+tbody tr:hover .doc-title {
+  white-space: normal; overflow: visible; word-break: break-word;
+}
+.sub { font-size: 12.5px; color: var(--muted); }
+
+.badge {
+  font-size: 11.5px; font-weight: 550; border-radius: 6px; padding: 3px 9px; white-space: nowrap;
+  background: var(--line-soft); color: var(--muted);
+}
+.badge.indexed { background: var(--ok-soft); color: var(--ok); }
+.badge.failed { background: var(--danger-soft); color: var(--danger); }
+.badge.pending_review, .badge.needs_ocr, .badge.pending { background: var(--warn-soft); color: var(--warn); }
+
+/* Ô icon bot trên mỗi dòng tài liệu */
+.botcell {
+  display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--line);
+  background: var(--panel); border-radius: 999px; padding: 4px 10px 4px 6px; cursor: pointer;
+  font: inherit; font-size: 12.5px; color: var(--muted);
+}
+.botcell:hover { border-color: var(--accent); color: var(--accent-ink); }
+.botdot {
+  width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
+  color: #fff; font-size: 10px; flex: none;
+}
+.botcell .none { font-style: italic; color: var(--faint); padding: 0 3px; }
+
+/* ===== Nút ================================================================ */
+.btn {
+  font: inherit; font-size: 13.5px; font-weight: 550; border-radius: 8px; padding: 8px 15px;
+  border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer;
+  display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
+}
+.btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover:not(:disabled) { opacity: .9; color: #fff; }
+.btn.danger { color: var(--danger); }
+.btn.danger:hover:not(:disabled) { background: var(--danger-soft); border-color: var(--danger); color: var(--danger); }
+.btn.sm { padding: 5px 11px; font-size: 12.5px; }
+.btn:disabled { opacity: .5; cursor: default; }
+.btn .spin {
+  width: 12px; height: 12px; border: 2px solid currentColor; border-right-color: transparent;
+  border-radius: 50%; animation: spin .7s linear infinite; display: none;
+}
+.btn.busy .spin { display: block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .btn .spin { animation-duration: 2s; } }
+
+/* ===== Trạng thái tải ===================================================== */
+.skel { background: linear-gradient(90deg, #eeedf3 25%, #f6f5f9 50%, #eeedf3 75%);
+  background-size: 400% 100%; animation: sweep 1.3s ease-in-out infinite;
+  border-radius: 6px; height: 12px; }
+@keyframes sweep { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
+@media (prefers-reduced-motion: reduce) { .skel { animation: none; } }
+.empty { padding: 38px 20px; text-align: center; color: var(--muted); font-size: 14px; }
+.empty b { display: block; color: var(--ink); font-size: 16px; font-weight: 650; margin-bottom: 6px; }
+.err-box {
+  margin: 12px 0 0; padding: 11px 14px; border-radius: 9px; font-size: 12.5px;
+  background: var(--danger-soft); color: var(--danger); border: 1px solid #f3ccd6;
+}
+
+/* ===== Biểu mẫu =========================================================== */
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 13px 16px; }
+@media (max-width: 820px) { .grid2 { grid-template-columns: 1fr; } }
+label.f { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 550; color: var(--muted); }
+label.f .note { font-size: 12.5px; font-weight: 400; color: var(--faint); line-height: 1.5; }
+input[type=text], input[type=number], textarea, select {
+  font: inherit; font-size: 14px; color: var(--ink); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 8px; padding: 8px 11px; width: 100%;
+}
+textarea { resize: vertical; min-height: 58px; line-height: 1.5; }
+input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+input[readonly] { background: var(--line-soft); color: var(--muted); }
+.check { display: flex; align-items: center; gap: 9px; font-size: 14px; color: var(--ink); }
+.check input { width: auto; }
+fieldset { border: 0; padding: 0; margin: 0 0 22px; }
+legend { font-size: 11.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); padding: 0 0 13px; font-weight: 650; }
+
+.chiprow { display: flex; flex-wrap: wrap; gap: 7px; }
+.chk { display: inline-flex; align-items: center; gap: 7px; font-size: 13.5px;
+  border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; cursor: pointer; }
+.chk input { width: auto; margin: 0; }
+.chk:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
+.sw { width: 32px; height: 32px; border-radius: 9px; border: 2px solid transparent; cursor: pointer; padding: 0; }
+.sw[aria-pressed="true"] { border-color: var(--ink); }
+
+/* Bộ lọc bot dạng tab */
+.botfilter { display: flex; gap: 7px; flex-wrap: wrap; }
+.fbtn {
+  font: inherit; font-size: 13.5px; border: 1px solid var(--line); background: var(--panel);
+  border-radius: 999px; padding: 6px 15px 6px 7px; cursor: pointer; color: var(--ink);
+  display: inline-flex; align-items: center; gap: 7px;
+}
+.fbtn:hover { border-color: var(--accent); }
+.fbtn.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); font-weight: 650; }
+.fbtn .n { font-size: 11px; color: var(--muted); }
+.fbtn.on .n { color: var(--accent-ink); }
+
+/* Danh sách tài liệu chọn được ngay trong màn cấu hình bot */
+.docpick {
+  border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+}
+.docpick-head {
+  display: flex; align-items: center; gap: 10px; padding: 9px 12px;
+  border-bottom: 1px solid var(--line); background: #fafafd;
+}
+.docpick-head input[type=text] { flex: 1; }
+.docpick-list { max-height: 340px; overflow-y: auto; }
+.docpick-row {
+  display: flex; align-items: center; gap: 11px; padding: 9px 13px;
+  border-bottom: 1px solid var(--line-soft); cursor: pointer;
+}
+.docpick-row:last-child { border-bottom: 0; }
+.docpick-row:hover { background: #fafafd; }
+.docpick-row input { width: auto; margin: 0; flex: none; }
+.docpick-row .t { flex: 1; min-width: 0; }
+.docpick-row .t b { font-weight: 620; display: block; }
+.docpick-row.hidden { display: none; }
+.docpick-foot { padding: 9px 13px; border-top: 1px solid var(--line); background: #fafafd; }
+
+/* Ô trợ lý ở bảng kho — chỉ để xem, việc gán làm ở màn cấu hình bot */
+.botcell-ro {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 12.5px; color: var(--muted);
+}
+
+/* ===== Lớp phủ ============================================================ */
+.modalbk {
+  position: fixed; inset: 0; background: rgba(20,16,50,.5); z-index: 90;
+  display: flex; align-items: center; justify-content: center; padding: 4vh 16px;
+}
+.modal {
+  background: var(--panel); border-radius: 14px; width: min(620px, 96vw);
+  max-height: 92vh; display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: 0 18px 48px rgba(20,16,50,.28);
+}
+.modal-head { padding: 13px 18px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 10px; }
+.modal-head h3 { font-size: 16.5px; font-weight: 650; letter-spacing: -.015em; margin: 0; }
+.modal-head .grow { margin-left: auto; }
+.modal-body { padding: 16px 18px; overflow-y: auto; }
+.modal-foot { padding: 12px 18px; border-top: 1px solid var(--line); display: flex; gap: 9px; background: #fafafd; }
+.modal-foot .grow { margin-left: auto; }
+.x { width: 28px; height: 28px; border: 0; border-radius: 7px; background: none; color: var(--muted); cursor: pointer; font-size: 15px; }
+.x:hover { background: var(--line-soft); color: var(--ink); }
+
+.drop {
+  border: 2px dashed var(--line); border-radius: var(--r); padding: 26px 18px; text-align: center;
+  color: var(--muted); font-size: 14px; cursor: pointer;
+}
+.drop:hover, .drop.over { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
+.uprow { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line-soft); font-size: 13.5px; }
+.uprow .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.uprow .st { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+
+.toast {
+  position: fixed; right: 22px; bottom: 22px; z-index: 100; background: var(--ink); color: #fff;
+  font-size: 14px; padding: 12px 18px; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.2);
+  opacity: 0; transform: translateY(8px); transition: opacity .18s, transform .18s; pointer-events: none;
+}
+.toast.show { opacity: 1; transform: translateY(0); }
+.toast.err { background: var(--danger); }
+
+@media (max-width: 760px) {
+  body { grid-template-columns: 1fr; }
+  .side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; }
+  .side-nav { flex-direction: row; flex-wrap: wrap; }
+  .side-foot { margin: 0; border: 0; }
+  .main { padding: 16px; }
+}
 </style>
 </head>
 <body>
-<header>
-  <div class="brand">
-    <div class="logo">⚙️</div>
-    <div>
-      <h1>EDU-DOCBOT · Quản trị</h1>
-      <span class="sub">Kho tài liệu &amp; pipeline nạp</span>
+
+<!-- ===== Sidebar ========================================================= -->
+<aside class="side">
+  <div class="side-brand">
+    <div class="mark">⚙</div>
+    <div><b>EDU-DOCBOT</b><span>Quản trị</span></div>
+  </div>
+  <nav class="side-nav" id="nav">
+    <button class="nav-item on" data-sec="tong-quan" type="button"><span class="ico">▦</span> Tổng quan</button>
+    <button class="nav-item" data-sec="tro-ly" type="button"><span class="ico">🤖</span> Trợ lý ảo <span class="count" id="n-bots">·</span></button>
+    <button class="nav-item" data-sec="kho" type="button"><span class="ico">📚</span> Kho tài liệu <span class="count" id="n-docs">·</span></button>
+    <button class="nav-item" data-sec="cho-xu-ly" type="button"><span class="ico">⏳</span> Chờ xử lý <span class="count" id="n-pending">·</span></button>
+    <button class="nav-item" data-sec="chi-phi" type="button"><span class="ico">◷</span> Chi phí</button>
+    <button class="nav-item" data-sec="tu-van" type="button"><span class="ico">💬</span> Trang tư vấn</button>
+  </nav>
+  <div class="side-foot">
+    <a href="/docs" target="_blank">↗ Swagger API</a>
+  </div>
+</aside>
+
+<main class="main">
+
+  <!-- ===== Tổng quan ===================================================== -->
+  <section class="sec on" id="sec-tong-quan">
+    <div class="page-head">
+      <div>
+        <h1>Tổng quan</h1>
+        <p>Tình trạng kho tài liệu và các trợ lý đang phục vụ.</p>
+      </div>
+      <span class="grow"></span>
+      <button class="btn" id="btn-embed" type="button"><span class="spin"></span>Tính vector còn thiếu</button>
+      <button class="btn" id="btn-scan" type="button"><span class="spin"></span>Quét thư mục server</button>
+      <button class="btn" id="btn-reprocess" type="button"><span class="spin"></span>Xử lý lại toàn bộ</button>
     </div>
-  </div>
-  <a class="back" href="/">← Về trang chat</a>
-</header>
-<main>
+    <div class="tiles" id="tiles"></div>
+    <div class="card" style="margin-top:16px">
+      <div class="card-head"><h2>Trợ lý đang bật</h2></div>
+      <div class="card-body" id="overview-bots"></div>
+    </div>
+  </section>
 
-<div class="stats" id="stats" hidden>
-  <div class="stat"><div class="n" id="st-total">–</div><div class="t">Tài liệu trong kho</div></div>
-  <div class="stat ok"><div class="n" id="st-indexed">–</div><div class="t">Đã đánh chỉ mục</div></div>
-  <div class="stat warn"><div class="n" id="st-pending">–</div><div class="t">Chờ xử lý / OCR</div></div>
-  <div class="stat err"><div class="n" id="st-vector">–</div><div class="t">Chunk thiếu vector</div></div>
-</div>
+  <!-- ===== Trợ lý ảo ===================================================== -->
+  <section class="sec" id="sec-tro-ly">
+    <div class="page-head">
+      <div>
+        <h1>Trợ lý ảo</h1>
+        <p>Mỗi trợ lý là một bản ghi. Thêm bot, đổi giọng hay tắt bot đều làm ở đây — không cần sửa mã, không cần cài lại.</p>
+      </div>
+      <span class="grow"></span>
+      <button class="btn primary" id="btn-new-bot" type="button">+ Thêm trợ lý</button>
+    </div>
+    <div style="display:grid; grid-template-columns:270px 1fr; gap:16px; align-items:start" id="bot-layout">
+      <div class="card"><div class="card-body" style="padding:6px" id="bot-list"></div></div>
+      <div class="card">
+        <div class="card-head"><h2 id="bot-form-title">Chưa chọn trợ lý</h2></div>
+        <div class="card-body" id="bot-form" hidden></div>
+        <div class="empty" id="bot-empty"><b>Chọn một trợ lý bên trái</b>hoặc bấm “+ Thêm trợ lý” để tạo mới.</div>
+        <div class="modal-foot" id="bot-actions" hidden>
+          <button class="btn primary" id="bot-save" type="button"><span class="spin"></span>Lưu thay đổi</button>
+          <button class="btn" id="bot-revert" type="button">Hoàn tác</button>
+          <span class="grow"></span>
+          <button class="btn danger" id="bot-delete" type="button">Xóa trợ lý</button>
+        </div>
+      </div>
+    </div>
+  </section>
 
-<section>
-  <h2>Kho tài liệu</h2>
-  <div class="row" style="margin: 4px 0 10px">
-    <button id="open-upload">⬆ Nạp tài liệu mới</button>
-    <button id="reindex-selected" class="ghost">Nạp lại mục đã chọn</button>
-    <button id="scan-btn" class="ghost" title="Duyệt thư mục files/ trên máy chủ, nạp file chưa có (5 tầng tự nhận metadata)">Quét file mới</button>
-    <button id="reprocess-btn" class="warn" title="Đọc bảng documents, chạy lại trọn pipeline cho từng path">Xử lý lại toàn bộ</button>
-    <button id="delete-selected" class="danger" title="Xóa bản ghi + file trên đĩa + dòng manifest của các mục đã tick">🗑 Xóa mục đã chọn</button>
-    <button id="docs-refresh" class="ghost" style="margin-left:auto">↻ Làm mới</button>
-  </div>
-  <div class="table-scroll">
-  <table id="docs-table">
-    <thead>
-      <tr>
-        <th style="width:28px"><input type="checkbox" id="docs-all" title="Chọn tất cả"></th>
-        <th>Tài liệu</th><th>Môn</th><th>Loại</th><th>Quyền</th><th>Trạng thái</th>
-        <th title="Số chunk đã có vector / tổng — thiếu thì tìm kiếm ngữ nghĩa không thấy tài liệu này. Bấm 'Quét file mới' để embed phần thiếu.">Vector</th>
-        <th style="width:70px">Thao tác</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  </table>
-  </div>
-  <div id="scanlog"></div>
-</section>
+  <!-- ===== Kho tài liệu ================================================== -->
+  <section class="sec" id="sec-kho">
+    <div class="page-head">
+      <div>
+        <h1>Kho tài liệu</h1>
+        <p>Xem kho đang có gì và tài liệu nào thuộc trợ lý nào, rồi nạp thêm.
+        Việc gán tài liệu cho trợ lý làm ở mục <b>Trợ lý ảo</b> — nơi bạn nhìn thấy
+        cả phạm vi của bot cùng lúc.</p>
+      </div>
+      <span class="grow"></span>
+      <button class="btn primary" id="btn-upload" type="button">⬆ Nạp tài liệu</button>
+    </div>
 
-<section>
-  <h2>Chờ xử lý <button id="pending-refresh" class="ghost" style="margin-left:auto">↻ Làm mới</button></h2>
-  <p class="hint">File hệ thống chưa tự xác định được môn/loại, hoặc chữ trong file hỏng cần OCR.
-     Chọn cho đúng rồi bấm <b>Gán &amp; nạp lại</b>.</p>
-  <div class="table-scroll">
-  <table id="pending-table">
-    <thead><tr><th>File</th><th>Trạng thái</th><th>Gán metadata</th></tr></thead>
-    <tbody></tbody>
-  </table>
-  </div>
-</section>
+    <div class="card">
+      <div class="card-head">
+        <div class="botfilter" id="doc-filter"></div>
+        <span class="grow"></span>
+        <button class="btn sm" id="btn-bulk-reindex" type="button" disabled><span class="spin"></span>Nạp lại</button>
+        <button class="btn sm danger" id="btn-bulk-delete" type="button" disabled>Xóa</button>
+      </div>
+      <div class="scroll" id="doc-wrap"></div>
+    </div>
+  </section>
 
+  <!-- ===== Chờ xử lý ===================================================== -->
+  <section class="sec" id="sec-cho-xu-ly">
+    <div class="page-head">
+      <div>
+        <h1>Chờ xử lý</h1>
+        <p>File thiếu metadata hoặc hỏng chữ. Gán môn/loại rồi nạp lại, hoặc chạy OCR nếu là bản scan.</p>
+      </div>
+    </div>
+    <div class="card"><div class="scroll" id="pending-wrap"></div></div>
+  </section>
+
+  <!-- ===== Trang tư vấn ================================================== -->
+  <!-- Nhúng thẳng trang chat thật bằng iframe thay vì dựng lại giao diện ở đây:
+       người quản trị thấy đúng cái người dùng thấy, và sửa cấu hình bot xong là
+       bấm ↻ kiểm ngay, khỏi nhảy tab. -->
+  <section class="sec" id="sec-tu-van">
+    <div class="page-head">
+      <div>
+        <h1>Trang tư vấn</h1>
+        <p>Đúng trang mà người dùng thấy. Sửa cấu hình trợ lý xong, bấm nút tải lại ở đây để kiểm ngay.</p>
+      </div>
+      <span class="grow"></span>
+      <button class="btn" id="tv-reload" type="button"><span class="spin"></span>Tải lại</button>
+      <a class="btn" href="/" target="_blank" rel="noopener">Mở tab mới ↗</a>
+    </div>
+    <div class="card" style="overflow:hidden">
+      <iframe id="tv-frame" title="Trang tư vấn"
+              style="width:100%; height:calc(100vh - 210px); min-height:520px; border:0; display:block"></iframe>
+    </div>
+  </section>
+
+  <!-- ===== Chi phí ======================================================= -->
+  <section class="sec" id="sec-chi-phi">
+    <div class="page-head">
+      <div>
+        <h1>Chi phí &amp; lưu lượng</h1>
+        <p>Bảy ngày gần nhất, lấy từ nhật ký truy vấn thật.</p>
+      </div>
+    </div>
+    <div class="tiles" id="cost-tiles"></div>
+    <div class="card" style="margin-top:16px">
+      <div class="card-head"><h2>Phân bố nhánh xử lý</h2></div>
+      <div class="card-body" id="route-dist"></div>
+    </div>
+  </section>
 </main>
 
-<!-- Popup nạp tài liệu mới — toàn bộ các bước tải lên nằm trong đây -->
-<div class="modalbk" id="upload-modal" hidden>
-  <div class="modal">
-    <div class="modal-head">
-      <b>Nạp tài liệu mới</b>
-      <button class="ghost" id="close-upload" title="Đóng">✕</button>
-    </div>
-    <p class="hint">Bước 1: chọn/kéo thả file. Bước 2: chọn <b>môn</b> và <b>loại</b> cho từng dòng
-       (metadata chọn tay thắng mọi cách đoán tự động). Bước 3: bấm tải lên tất cả.</p>
-
-    <input type="file" id="up-files" multiple accept=".pdf,.docx,.pptx,.txt,.md" hidden>
-    <div class="drop" id="drop">
-      <div class="drop-icon">📄</div>
-      <div><b>Kéo thả file vào đây</b> hoặc bấm để chọn — chọn thêm bao nhiêu lần cũng được</div>
-      <div class="drop-sub">PDF · DOCX · PPTX · TXT · MD</div>
-    </div>
-
-    <div class="table-scroll">
-    <table id="upload-table" style="display:none">
-      <thead>
-        <tr>
-          <th style="width:34%">File</th>
-          <th>Môn học</th>
-          <th>Loại</th>
-          <th>Quyền</th>
-          <th style="width:90px">Trạng thái</th>
-          <th style="width:34px"></th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-    </div>
-
-    <div class="row" id="upload-actions" style="display:none; margin-top:12px">
-      <button id="up-btn">⬆ Tải lên tất cả (<span id="up-count">0</span> file)</button>
-      <button class="ghost" id="apply-first">Áp lựa chọn dòng đầu cho tất cả</button>
-      <button class="ghost" id="clear-files">Xóa danh sách</button>
-    </div>
-    <div id="uplog"></div>
-  </div>
-</div>
+<div class="toast" id="toast"></div>
 
 <script>
-const HEADERS = { 'X-User-Id': '4' };   // demo: admin
-// Server đặt ADMIN_TOKEN trong .env → mọi lời gọi /admin cần thêm header khớp.
-// Hỏi một lần, nhớ trong localStorage; server không đặt thì bỏ qua (demo).
-const savedToken = localStorage.getItem('admin_token');
-if (savedToken) HEADERS['X-Admin-Token'] = savedToken;
-async function ensureAdminAccess() {
-  const res = await fetch('/api/v1/admin/courses', { headers: HEADERS });
-  if (res.status === 404 && !HEADERS['X-Admin-Token']) {
-    const token = prompt('Server yêu cầu mã quản trị (ADMIN_TOKEN):');
-    if (token) {
-      HEADERS['X-Admin-Token'] = token;
-      localStorage.setItem('admin_token', token);
-    }
+// ===========================================================================
+// Trạng thái chung
+// ===========================================================================
+const $ = id => document.getElementById(id);
+let TOKEN = sessionStorage.getItem('docbot-admin-token') || '';
+let BOTS = [], DOCS = [], COURSES = [], PENDING = [];
+let docFilter = '';          // '' = tất cả, 'chua-gan' = chưa gán bot nào, còn lại là slug
+let curBot = null, isNewBot = false;
+
+const DOC_TYPES = [
+  ['giao_trinh','Giáo trình'], ['slide','Slide'], ['de_cuong','Đề cương'],
+  ['de_thi','Đề thi'], ['bai_tap','Bài tập'],
+  ['tai_lieu_tham_khao','Tài liệu tham khảo'], ['quy_che','Văn bản'],
+];
+const ACCESS = [['public','Công khai'],['faculty','Theo khoa'],['course','Theo lớp'],['staff','Cán bộ']];
+const PALETTES = [
+  { c1:'#6c4de6', c2:'#5a3fd0', soft:'#efeaff', ink:'#4a32b8', shadow:'rgba(76,48,190,.38)' },
+  { c1:'#5b5bd6', c2:'#4646b8', soft:'#e9e9fb', ink:'#3a3a99', shadow:'rgba(70,70,184,.38)' },
+  { c1:'#0e8a63', c2:'#0b6e4f', soft:'#dff3ea', ink:'#0a5d43', shadow:'rgba(11,110,79,.38)' },
+  { c1:'#0f6fbf', c2:'#0c589a', soft:'#e2eefb', ink:'#0a4a80', shadow:'rgba(12,88,154,.38)' },
+  { c1:'#b8532b', c2:'#96421f', soft:'#fbeae2', ink:'#7d3818', shadow:'rgba(150,66,31,.38)' },
+  { c1:'#3f4a5a', c2:'#2c3543', soft:'#eceef1', ink:'#252d3a', shadow:'rgba(44,53,67,.38)' },
+];
+
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function toast(msg, err) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (err ? ' err' : '');
+  setTimeout(() => { t.className = 'toast' + (err ? ' err' : ''); }, 2800);
+}
+
+function headers(json) {
+  const h = { 'X-User-Id': '4' };
+  if (json) h['Content-Type'] = 'application/json';
+  if (TOKEN) h['X-Admin-Token'] = TOKEN;
+  return h;
+}
+
+async function api(path, opts = {}) {
+  const res = await fetch('/api/v1/admin' + path, { headers: headers(opts.body), ...opts });
+  if (res.status === 404 && !TOKEN && !path.includes('/assistants/')) {
+    const t = prompt('Trang quản trị đang khóa. Nhập ADMIN_TOKEN:');
+    if (t) { TOKEN = t; sessionStorage.setItem('docbot-admin-token', t); return api(path, opts); }
+  }
+  if (!res.ok) {
+    let detail = res.status;
+    try { const j = await res.json(); detail = j.detail || detail; } catch {}
+    throw new Error(detail);
+  }
+  return res.status === 204 ? null : res.json();
+}
+
+// Nút có spinner: khóa nút, hiện vòng xoay, luôn mở lại kể cả khi lỗi.
+async function withBusy(btn, fn) {
+  if (!btn) return fn();
+  const old = btn.disabled;
+  btn.classList.add('busy'); btn.disabled = true;
+  try { return await fn(); }
+  finally { btn.classList.remove('busy'); btn.disabled = old; }
+}
+
+// Khung xương trong lúc chờ — thay cho màn hình trắng hoặc chữ "Đang tải…".
+function skeletonTable(host, cols, rows = 5) {
+  host.innerHTML = `<table><tbody>${
+    Array.from({ length: rows }, () => `<tr>${
+      Array.from({ length: cols }, (_, i) =>
+        `<td><div class="skel" style="width:${[70,45,30,55,35,25][i % 6]}%"></div></td>`).join('')
+    }</tr>`).join('')
+  }</tbody></table>`;
+}
+function skeletonTiles(host, n = 4) {
+  host.innerHTML = Array.from({ length: n }, () =>
+    `<div class="tile"><div class="skel" style="width:52%"></div>
+     <div class="skel" style="width:34%;height:22px;margin-top:9px"></div></div>`).join('');
+}
+function emptyBox(title, hint) {
+  return `<div class="empty"><b>${esc(title)}</b>${esc(hint || '')}</div>`;
+}
+function errBox(host, e, retry) {
+  host.innerHTML = `<div class="empty"><b>Không tải được</b>${esc(e.message || e)}</div>`;
+  if (retry) {
+    const b = document.createElement('button');
+    b.className = 'btn'; b.textContent = 'Thử lại';
+    b.style.margin = '0 auto 20px'; b.style.display = 'block';
+    b.addEventListener('click', retry);
+    host.appendChild(b);
   }
 }
-const TYPES = {
-  giao_trinh: 'Giáo trình', slide: 'Slide', de_cuong: 'Đề cương', de_thi: 'Đề thi',
-  bai_tap: 'Bài tập', tai_lieu_tham_khao: 'TL tham khảo', quy_che: 'Quy chế',
-};
-let COURSES = [];
 
-function esc(s) {
-  return String(s ?? '').replace(/[&<>"']/g, c => ({
-    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const botBy = slug => BOTS.find(b => b.slug === slug);
+const botColor = b => (b && b.brand && b.brand.c1) || '#8d8ca0';
+const botIcon = b => (b && b.welcome && b.welcome.icon) || '💬';
+
+// ===========================================================================
+// Điều hướng
+// ===========================================================================
+$('nav').addEventListener('click', e => {
+  const btn = e.target.closest('.nav-item');
+  if (!btn) return;
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('on', n === btn));
+  document.querySelectorAll('.sec').forEach(s => s.classList.toggle('on', s.id === 'sec-' + btn.dataset.sec));
+  if (btn.dataset.sec === 'chi-phi') loadMetrics();
+  if (btn.dataset.sec === 'cho-xu-ly') loadPending();
+  if (btn.dataset.sec === 'tu-van') showTuVan();
+});
+
+// ===========================================================================
+// Tổng quan
+// ===========================================================================
+function renderOverview() {
+  const total = DOCS.length;
+  const indexed = DOCS.filter(d => d.status === 'indexed').length;
+  const noVec = DOCS.filter(d => d.chunks > 0 && d.embedded < d.chunks).length;
+  const unassigned = DOCS.filter(d => !d.assistant_slugs).length;
+  $('tiles').innerHTML = `
+    <div class="tile"><div class="k">Tài liệu</div><div class="v">${total}</div><div class="n">trong kho</div></div>
+    <div class="tile ok"><div class="k">Đã đánh chỉ mục</div><div class="v">${indexed}</div><div class="n">tìm kiếm được</div></div>
+    <div class="tile ${PENDING.length ? 'warn' : ''}"><div class="k">Chờ xử lý</div><div class="v">${PENDING.length}</div><div class="n">thiếu metadata / cần OCR</div></div>
+    <div class="tile ${noVec ? 'warn' : ''}"><div class="k">Thiếu vector</div><div class="v">${noVec}</div>
+      <div class="n">${noVec ? 'chưa hỏi nội dung được — bấm “Tính vector còn thiếu”' : 'tất cả đã hỏi nội dung được'}</div></div>
+    <div class="tile"><div class="k">Trợ lý</div><div class="v">${BOTS.filter(b => b.is_active).length}</div><div class="n">đang bật</div></div>
+    <div class="tile ${unassigned ? 'warn' : ''}"><div class="k">Chưa gán trợ lý</div><div class="v">${unassigned}</div><div class="n">mọi bot đều đọc được</div></div>`;
+
+  $('overview-bots').innerHTML = BOTS.length ? BOTS.map(b => {
+    const n = DOCS.filter(d => (d.assistant_slugs || '').split(',').includes(b.slug)).length;
+    return `<div style="display:flex;align-items:center;gap:11px;padding:9px 0;border-bottom:1px solid var(--line-soft)">
+      <span class="botdot" style="width:26px;height:26px;font-size:12px;background:linear-gradient(140deg,${botColor(b)},${(b.brand||{}).c2||botColor(b)})">${botIcon(b)}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600">${esc(b.name)}</div>
+        <div class="sub">${esc(b.tagline || '')}</div>
+      </div>
+      <span class="badge">${n ? n + ' tài liệu riêng' : 'đọc toàn kho'}</span>
+      ${b.is_active ? '' : '<span class="badge">Tắt</span>'}
+    </div>`;
+  }).join('') : emptyBox('Chưa có trợ lý nào', 'Sang mục “Trợ lý ảo” để tạo.');
 }
 
-function courseOptions(selected) {
-  return '<option value="">— Môn học —</option>' + COURSES.map(c =>
-    `<option value="${esc(c.code)}" ${c.code === selected ? 'selected' : ''}>${esc(c.code)} — ${esc(c.name)}</option>`
-  ).join('');
-}
-
-function typeOptions(selected) {
-  return '<option value="">— Loại —</option>' + Object.entries(TYPES).map(
-    ([v, label]) => `<option value="${v}" ${v === selected ? 'selected' : ''}>${label}</option>`).join('');
-}
-
-async function loadCourses() {
+// Vector tính ở nền sau khi nạp, nên vừa nạp xong nhìn thấy "thiếu vector" là
+// bình thường — chờ chút rồi tải lại. Nút này dành cho lúc nó KẸT thật (hết hạn
+// mức, mạng chớp tắt): chạy đồng bộ và trả về con số thật.
+$('btn-embed').addEventListener('click', e => withBusy(e.currentTarget, async () => {
   try {
-    const res = await fetch('/api/v1/admin/courses', { headers: HEADERS });
-    if (!res.ok) return;
-    COURSES = await res.json();
-  } catch {} // danh mục hỏng không được chặn phần còn lại của trang
-}
+    const r = await api('/embed', { method: 'POST' });
+    if (r.skipped) toast('Chưa cấu hình được mô hình nhúng — kiểm tra khóa API', true);
+    else if (!r.embedded && !r.remaining) toast('Không có chunk nào thiếu vector');
+    else toast(`Đã tính ${r.embedded} chunk`
+      + (r.failed_batches ? ` · ${r.failed_batches} lô lỗi` : '')
+      + (r.remaining ? ` · còn ${r.remaining} chunk, bấm lại để thử tiếp` : ' · xong'));
+    await loadDocs(); renderOverview();
+  } catch (err) { toast('Không tính được: ' + err.message, true); }
+}));
 
-// --- Thống kê nhanh trên đầu trang ------------------------------------------
-function renderStats(rows) {
-  const el = document.getElementById('stats');
-  el.hidden = false;
-  const indexed = rows.filter(r => r.status === 'indexed').length;
-  const missing = rows.reduce((s, r) => s + Math.max(0, (r.chunks || 0) - (r.embedded || 0)), 0);
-  document.getElementById('st-total').textContent = rows.length;
-  document.getElementById('st-indexed').textContent = indexed;
-  document.getElementById('st-pending').textContent = rows.length - indexed;
-  document.getElementById('st-vector').textContent = missing;
-}
-
-// --- Popup nạp tài liệu ------------------------------------------------------
-const uploadModal = document.getElementById('upload-modal');
-document.getElementById('open-upload').addEventListener('click', () => {
-  uploadModal.hidden = false;
-});
-document.getElementById('close-upload').addEventListener('click', () => {
-  uploadModal.hidden = true;
-  loadDocs();  // đóng popup là kho cập nhật luôn
-});
-uploadModal.addEventListener('click', e => {
-  if (e.target === uploadModal) { uploadModal.hidden = true; loadDocs(); }
-});
-
-// --- Upload (trong popup) ----------------------------------------------------
-// Mỗi file một HÀNG với lựa chọn riêng (môn/loại/quyền) — một nút tải tất cả.
-const dropEl = document.getElementById('drop');
-const fileInput = document.getElementById('up-files');
-const uploadTable = document.getElementById('upload-table');
-const uploadBody = uploadTable.querySelector('tbody');
-const uploadActions = document.getElementById('upload-actions');
-
-// Mỗi file một object GIỮ CẢ LỰA CHỌN — render lại bảng không làm mất những gì
-// đã chọn (bug cũ: thêm file mới là mọi select bị reset vì innerHTML dựng lại).
-let pendingFiles = [];   // [{file, status, course, type, access}]
-
-function accessOptions(selected) {
-  const opts = [
-    ['public', 'Công khai'], ['faculty', 'Theo khoa'],
-    ['course', 'Theo lớp'], ['staff', 'Cán bộ/GV'],
-  ];
-  return opts.map(([v, label]) =>
-    `<option value="${v}" ${v === (selected || 'public') ? 'selected' : ''}>${label}</option>`
-  ).join('');
-}
-
-function addFiles(fileArray) {
-  for (const file of fileArray) {
-    // Trùng tên + kích thước với file đã có trong danh sách thì bỏ qua
-    if (pendingFiles.some(p => p.file.name === file.name && p.file.size === file.size)) continue;
-    pendingFiles.push({ file, status: '', course: '', type: '', access: 'public' });
-  }
-  renderUploadRows();
-}
-
-function renderUploadRows() {
-  uploadBody.innerHTML = pendingFiles.map((p, i) => `
-    <tr data-i="${i}">
-      <td class="file-name" title="${esc(p.file.name)}">${esc(p.file.name)}
-        <span style="color:var(--muted);font-weight:400"> · ${(p.file.size / 1048576).toFixed(1)}MB</span></td>
-      <td><select class="u-course">${courseOptions(p.course)}</select></td>
-      <td><select class="u-type">${typeOptions(p.type)}</select></td>
-      <td><select class="u-access">${accessOptions(p.access)}</select></td>
-      <td class="u-status">${p.status}</td>
-      <td><button class="ghost u-remove" title="Bỏ file này">✕</button></td>
-    </tr>`).join('');
-
-  const has = pendingFiles.length > 0;
-  uploadTable.style.display = has ? '' : 'none';
-  uploadActions.style.display = has ? '' : 'none';
-  document.getElementById('up-count').textContent = pendingFiles.length;
-
-  for (const btn of uploadBody.querySelectorAll('.u-remove')) {
-    btn.addEventListener('click', e => {
-      pendingFiles.splice(Number(e.target.closest('tr').dataset.i), 1);
-      renderUploadRows();
-    });
-  }
-}
-
-// Người dùng đổi select nào thì ghi ngay vào state của file tương ứng.
-uploadBody.addEventListener('change', e => {
-  const tr = e.target.closest('tr');
-  if (!tr) return;
-  const p = pendingFiles[Number(tr.dataset.i)];
-  if (!p) return;
-  if (e.target.classList.contains('u-course')) p.course = e.target.value;
-  if (e.target.classList.contains('u-type')) p.type = e.target.value;
-  if (e.target.classList.contains('u-access')) p.access = e.target.value;
-});
-
-dropEl.addEventListener('click', () => fileInput.click());
-fileInput.addEventListener('change', () => { addFiles([...fileInput.files]); fileInput.value = ''; });
-dropEl.addEventListener('dragover', e => { e.preventDefault(); dropEl.classList.add('over'); });
-dropEl.addEventListener('dragleave', () => dropEl.classList.remove('over'));
-dropEl.addEventListener('drop', e => {
-  e.preventDefault();
-  dropEl.classList.remove('over');
-  addFiles([...e.dataTransfer.files]);
-});
-
-document.getElementById('apply-first').addEventListener('click', () => {
-  if (pendingFiles.length < 2) return;
-  const first = pendingFiles[0];
-  for (const p of pendingFiles.slice(1)) {
-    p.course = first.course;
-    p.type = first.type;
-    p.access = first.access;
-  }
-  renderUploadRows();
-});
-
-document.getElementById('clear-files').addEventListener('click', () => {
-  pendingFiles = [];
-  renderUploadRows();
-});
-
-// Upload BẤT ĐỒNG BỘ hai pha, mỗi hàng một thanh tiến độ:
-//   pha 1 — tải lên: XHR với % thật của đường truyền;
-//   pha 2 — server xử lý nền (trích xuất/chunk/metadata): thanh chạy + poll
-//   /admin/ingest-status/{checksum} mỗi 1.5s tới khi ra trạng thái cuối.
-function uploadOne(p, statusEl) {
-  return new Promise(resolve => {
-    statusEl.innerHTML =
-      '<div class="pbar"><div class="pfill"></div></div><span class="plabel">0%</span>';
-    const fill = statusEl.querySelector('.pfill');
-    const label = statusEl.querySelector('.plabel');
-
-    const params = new URLSearchParams();
-    if (p.course) params.set('course_code', p.course);
-    params.set('doc_type', p.type);
-    params.set('access', p.access);
-
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/v1/admin/documents?' + params);
-    for (const [k, v] of Object.entries(HEADERS)) xhr.setRequestHeader(k, v);
-    xhr.upload.onprogress = e => {
-      if (e.lengthComputable) {
-        const pct = Math.round(e.loaded / e.total * 100);
-        fill.style.width = pct + '%';
-        label.textContent = pct + '%';
-      }
-    };
-    xhr.onload = () => {
-      let data = {};
-      try { data = JSON.parse(xhr.responseText); } catch {}
-      resolve({ ok: xhr.status >= 200 && xhr.status < 300, data, code: xhr.status });
-    };
-    xhr.onerror = () => resolve({ ok: false, data: {}, code: 0 });
-    const form = new FormData();
-    form.append('file', p.file);
-    xhr.send(form);
+$('btn-scan').addEventListener('click', e => withBusy(e.currentTarget, async () => {
+  try { const r = await api('/scan', { method: 'POST' });
+    toast(`Quét xong: ${r.indexed ?? 0} nạp mới, ${r.skipped ?? 0} bỏ qua`); await loadAll(); }
+  catch (err) { toast('Quét không được: ' + err.message, true); }
+}));
+$('btn-reprocess').addEventListener('click', e => {
+  if (!confirm('Xử lý lại toàn bộ kho? Việc này chạy lại pipeline cho mọi tài liệu.')) return;
+  withBusy(e.currentTarget, async () => {
+    try { await api('/reprocess-all', { method: 'POST' }); toast('Đã bắt đầu xử lý lại'); await loadAll(); }
+    catch (err) { toast('Không chạy được: ' + err.message, true); }
   });
-}
-
-document.getElementById('up-btn').addEventListener('click', async () => {
-  const logEl = document.getElementById('uplog');
-  const rows = [...uploadBody.querySelectorAll('tr')];
-  if (!rows.length) return;
-
-  // Kiểm trước toàn bộ — thiếu gì báo ngay, không nạp nửa chừng rồi kẹt
-  for (const tr of rows) {
-    const p = pendingFiles[Number(tr.dataset.i)];
-    if (!p.type || (p.type !== 'quy_che' && !p.course)) {
-      tr.querySelector('.u-status').innerHTML = '<span style="color:var(--err)">thiếu môn/loại</span>';
-      logEl.textContent = 'Còn file chưa chọn đủ môn/loại — xem cột trạng thái.';
-      return;
-    }
-  }
-
-  const btn = document.getElementById('up-btn');
-  btn.disabled = true;
-  logEl.textContent = '';
-  let sent = 0, failed = 0;
-
-  // Popup chỉ lo pha TẢI LÊN (% đường truyền). Gửi xong là việc của server —
-  // popup đóng, tiến trình xử lý theo dõi ngay trong bảng Kho tài liệu.
-  for (const tr of rows) {
-    const p = pendingFiles[Number(tr.dataset.i)];
-    const statusEl = tr.querySelector('.u-status');
-    const r = await uploadOne(p, statusEl);
-
-    if (!r.ok) {
-      failed++;
-      statusEl.innerHTML = '<span style="color:var(--err)">✗ lỗi</span>';
-      logEl.textContent += `✗ ${p.file.name} — ${r.data.detail || r.code || 'mất kết nối'}\n`;
-      continue;
-    }
-    sent++;
-    p._done = true;
-    statusEl.innerHTML = '<span style="color:var(--ok)">✓ đã gửi</span>';
-  }
-
-  pendingFiles = pendingFiles.filter(p => !p._done);
-  renderUploadRows();
-  btn.disabled = false;
-
-  const summary = document.getElementById('scanlog');
-  if (failed === 0) {
-    uploadModal.hidden = true;   // đóng popup — kho tài liệu tiếp quản
-    summary.textContent =
-      `⬆ ${sent} file đã tải lên, đang xử lý ở nền — trạng thái cập nhật trực tiếp trong bảng dưới.`;
-  } else {
-    summary.textContent =
-      `⬆ ${sent} file đang xử lý ở nền · ✗ ${failed} file tải lên lỗi — xem trong popup nạp.`;
-  }
-  loadDocs();      // bảng thấy dòng 'pending' sẽ tự làm mới 2s/lần đến khi xong
-  loadPending();
 });
 
-// --- Kho tài liệu (tickbox chọn xử lý lại) -----------------------------------
-// Dòng 'pending' = pipeline đang chạy nền → thanh tiến trình ngay trong bảng,
-// và bảng TỰ làm mới mỗi 2s đến khi không còn dòng nào đang xử lý.
-let _docsTimer = null;
-
-async function loadDocs() {
-  const body = document.querySelector('#docs-table tbody');
-  let rows;
-  try {
-    const res = await fetch('/api/v1/admin/documents', { headers: HEADERS });
-    if (!res.ok) { body.innerHTML = '<tr><td colspan="8">Không tải được danh sách (' + res.status + ').</td></tr>'; return; }
-    rows = await res.json();
-  } catch {
-    body.innerHTML = '<tr><td colspan="8">Mất kết nối máy chủ — bấm Làm mới thử lại.</td></tr>';
-    return;
-  }
-  renderStats(rows);
-
-  clearTimeout(_docsTimer);
-  if (rows.some(r => r.status === 'pending')) {
-    _docsTimer = setTimeout(() => { loadDocs(); loadPending(); }, 2000);
-  }
-
-  if (!rows.length) {
-    body.innerHTML = '<tr><td colspan="8" style="color:var(--muted)">Kho trống — bấm "Nạp tài liệu mới".</td></tr>';
-    return;
-  }
-  const statusCell = r => r.status === 'pending'
-    ? '<div class="pbar indet"><div class="pfill"></div></div><span class="plabel">đang xử lý…</span>'
-    : `<span class="badge ${esc(r.status)}">${esc(r.status)}</span>`;
-  body.innerHTML = rows.map(r => `
-    <tr data-id="${r.id}">
-      <td><input type="checkbox" class="d-check"></td>
-      <td class="file-name" title="${esc(r.file_path)}">${esc(r.title || r.file_path)}</td>
-      <td>${esc(r.course_code || '—')}</td>
-      <td>${TYPES[r.type] || esc(r.type || '—')}</td>
-      <td>${esc(r.access)}</td>
-      <td class="d-status">${statusCell(r)}</td>
-      <td>${r.chunks
-        ? (r.embedded === r.chunks
-            ? `<span class="badge vec-ok">✓ ${r.chunks}</span>`
-            : `<span class="badge vec-miss" title="Thiếu ${r.chunks - r.embedded} chunk chưa có vector — bấm 'Quét file mới' để embed nốt">${r.embedded}/${r.chunks}</span>`)
-        : '—'}</td>
-      <td><button class="icon-btn d-eye" title="Xem trước tài liệu"
-                  data-title="${esc(r.title || r.file_path)}">👁</button></td>
-    </tr>`).join('');
-
-  for (const btn of body.querySelectorAll('.d-eye')) {
-    btn.addEventListener('click', e => {
-      const tr = e.target.closest('tr');
-      openDocPreview(Number(tr.dataset.id), e.target.dataset.title);
-    });
-  }
+// ===========================================================================
+// Trợ lý ảo
+// ===========================================================================
+function renderBotList() {
+  $('bot-list').innerHTML = BOTS.length ? BOTS.map(b => `
+    <button class="nav-item ${curBot && !isNewBot && curBot.slug === b.slug ? 'on' : ''}" data-slug="${esc(b.slug)}" type="button">
+      <span class="botdot" style="background:linear-gradient(140deg,${botColor(b)},${(b.brand||{}).c2||botColor(b)})">${botIcon(b)}</span>
+      <span style="flex:1;min-width:0">
+        <span style="display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(b.name)}</span>
+        <span class="sub" style="font-family:ui-monospace,Consolas,monospace">${esc(b.slug)}</span>
+      </span>
+      ${b.is_active ? '' : '<span class="badge">Tắt</span>'}
+    </button>`).join('') : emptyBox('Chưa có trợ lý', '');
+  $('bot-list').querySelectorAll('[data-slug]').forEach(el =>
+    el.addEventListener('click', () => selectBot(el.dataset.slug)));
+  $('n-bots').textContent = BOTS.length;
 }
 
-// --- Popup xem trước tài liệu (PDF gốc hoặc bản PDF convert của PPTX/DOCX) ---
-function openDocPreview(documentId, title) {
-  closeDocPreview();
+function blankBot() {
+  return {
+    slug: '', name: '', tagline: '', corpus_label: 'tài liệu hiện có', offer: '',
+    doc_types: [], blocked_topics: [], access_levels: ['public'],
+    sort_order: (BOTS.length + 1) * 10, is_active: 1,
+    replies: { greeting: '', out_of_scope: '', clarify: '', abusive: '' },
+    contact: { hotline: '', website: '' },
+    welcome: { title: '', text: '', icon: '💬', chips: [] },
+    brand: { ...PALETTES[0] },
+    default_doc_type: '',
+    gen_temperature: null, gen_max_tokens: null, gen_thinking_budget: 0,
+  };
+}
+
+function botForm(b) {
+  const types = new Set(b.doc_types || []);
+  const levels = new Set(b.access_levels || []);
+  return `
+  <fieldset>
+    <legend>Nhận dạng</legend>
+    <div class="grid2">
+      <label class="f">Mã định danh (slug)
+        <input type="text" id="b-slug" value="${esc(b.slug)}" ${isNewBot ? '' : 'readonly'} placeholder="tuyen-sinh">
+        <span class="note">Trang chat gọi bot bằng mã này. Đặt xong không đổi.</span>
+      </label>
+      <label class="f">Tên hiển thị
+        <input type="text" id="b-name" value="${esc(b.name)}" placeholder="Trợ lý Tư vấn tuyển sinh">
+      </label>
+      <label class="f">Dòng phụ
+        <input type="text" id="b-tagline" value="${esc(b.tagline)}" placeholder="Ngành học · điểm chuẩn · xét tuyển">
+      </label>
+      <label class="f">Thứ tự hiện
+        <input type="number" id="b-sort" value="${b.sort_order ?? 0}">
+        <span class="note">Số nhỏ đứng trước trong hàng bong bóng.</span>
+      </label>
+    </div>
+    <label class="check" style="margin-top:12px">
+      <input type="checkbox" id="b-active" ${b.is_active ? 'checked' : ''}> Đang bật — tắt thì bong bóng biến mất khỏi trang chat
+    </label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Giọng nói</legend>
+    <div class="grid2">
+      <label class="f">Gọi kho tài liệu là
+        <input type="text" id="b-corpus" value="${esc(b.corpus_label)}" placeholder="tài liệu tuyển sinh hiện có">
+        <span class="note">Ghép vào câu: “em chưa có thông tin trong <b>…</b> ạ”.</span>
+      </label>
+      <label class="f">Câu mời đi tiếp
+        <textarea id="b-offer" placeholder="Anh/chị cần em hỗ trợ thông tin gì về ngành học không ạ?">${esc(b.offer)}</textarea>
+        <span class="note">Kết mọi câu tĩnh — chỗ giữ cho bot không mời sai việc.</span>
+      </label>
+      <label class="f">Câu chào<textarea id="b-greeting">${esc((b.replies||{}).greeting || '')}</textarea></label>
+      <label class="f">Câu ngoài phạm vi<textarea id="b-out">${esc((b.replies||{}).out_of_scope || '')}</textarea></label>
+      <label class="f">Hỏi lại khi câu hỏi cụt<textarea id="b-clarify">${esc((b.replies||{}).clarify || '')}</textarea></label>
+      <label class="f">Từ chối ngôn từ xúc phạm<textarea id="b-abusive">${esc((b.replies||{}).abusive || '')}</textarea></label>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Phạm vi — bot này đọc được những gì</legend>
+
+    <label class="f" style="margin-bottom:9px">Loại tài liệu
+      <span class="note">Không chọn = mọi loại.</span>
+    </label>
+    <div class="chiprow" id="b-doctypes">
+      ${DOC_TYPES.map(([v,l]) => `<label class="chk"><input type="checkbox" value="${v}" ${types.has(v)?'checked':''}> ${l}</label>`).join('')}
+    </div>
+
+    <label class="f" style="margin:16px 0 9px">Mức quyền tài liệu bot phục vụ
+      <span class="note">Chọn được nhiều. Đây là bộ lọc chồng lên quyền của người hỏi —
+      chỉ thu hẹp, không bao giờ nới: bot khai phục vụ mức “Cán bộ” cũng không làm
+      sinh viên đọc được tài liệu cán bộ.</span>
+    </label>
+    <div class="chiprow" id="b-access">
+      ${ACCESS.map(([v,l]) => `<label class="chk"><input type="checkbox" value="${v}" ${levels.has(v)?'checked':''}> ${l}</label>`).join('')}
+    </div>
+
+    <label class="f" style="margin:16px 0 9px">Tài liệu riêng của bot này
+      <span class="note">Không tick gì = bot đọc toàn kho theo hai bộ lọc ở trên.
+      Tick từ một tài liệu trở lên = bot CHỈ đọc đúng những tài liệu đã tick.</span>
+    </label>
+    <div class="docpick">
+      <div class="docpick-head">
+        <input type="text" id="b-docsearch" placeholder="Lọc theo tên tài liệu…">
+        <button class="btn sm" type="button" id="b-doc-none">Bỏ chọn hết</button>
+      </div>
+      <div class="docpick-list" id="b-docs"></div>
+      <div class="docpick-foot sub" id="b-doc-count"></div>
+    </div>
+    <label class="f" style="margin-top:15px">Chủ đề bot này KHÔNG nhận
+      <textarea id="b-blocked" placeholder="hoc phi&#10;thoi khoa bieu">${esc((b.blocked_topics||[]).join('\n'))}</textarea>
+      <span class="note">Mỗi dòng một cụm, viết KHÔNG DẤU. Hỏi trúng thì bot trả lời “ngoài phạm vi”.
+      Ví dụ: bot tra cứu tài liệu chặn “hoc phi”, còn bot tuyển sinh thì không — học phí là việc của nó.</span>
+    </label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Mặc định khi nạp tài liệu cho bot này</legend>
+    <label class="f">Loại tài liệu điền sẵn
+      <select id="b-deftype"><option value="">— không đặt sẵn —</option>
+        ${DOC_TYPES.map(([v,l]) => `<option value="${v}" ${b.default_doc_type===v?'selected':''}>${l}</option>`).join('')}
+      </select>
+      <span class="note">Ô quyền ở form nạp sẽ chỉ liệt kê các mức đã chọn ở phần Phạm vi.</span>
+    </label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Tham số sinh trả lời</legend>
+    <div class="grid2">
+      <label class="f">Độ tự nhiên (temperature)
+        <input type="number" id="b-temp" min="0" max="1" step="0.05"
+               value="${b.gen_temperature ?? ''}" placeholder="mặc định hệ thống (0,35)">
+        <span class="note">Thấp = bám sát tài liệu, khô. Cao = mượt hơn nhưng dễ trôi khỏi trích đoạn. Để trống = dùng mặc định.</span>
+      </label>
+      <label class="f">Trần token câu trả lời
+        <input type="number" id="b-maxtok" min="100" max="4096" step="50"
+               value="${b.gen_max_tokens ?? ''}" placeholder="mặc định hệ thống (800)">
+        <span class="note">Chỉ tính phần TRẢ LỜI. Ngân sách suy luận bên dưới được cộng thêm chứ không trừ vào đây.</span>
+      </label>
+    </div>
+    <label class="f" style="margin-top:13px">Ngân sách suy luận (thinking)
+      <input type="number" id="b-think" min="0" max="8192" step="128"
+             value="${b.gen_thinking_budget ?? 0}">
+      <span class="note"><b>0 = tắt, và nên để 0 với hầu hết bot.</b>
+      Token suy luận tính vào output — mà output đắt gấp 4 lần input, nên bật 500 token
+      là chi phí mỗi câu tăng khoảng gấp đôi, bật 1.000 là gấp ba. Nó cũng cộng thêm
+      1–2 giây trước khi chữ đầu tiên hiện ra.
+      Chỉ đáng bật cho bot hay gặp câu so sánh, tổng hợp nhiều tài liệu; câu hỏi tra cứu
+      thông thường thì không cải thiện gì. Đo lại bằng bộ eval trước khi giữ.</span>
+    </label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Khi bot không trả lời được</legend>
+    <div class="grid2">
+      <label class="f">Hotline
+        <input type="text" id="b-hotline" value="${esc((b.contact||{}).hotline || '')}" placeholder="1900 xxx xxx">
+        <span class="note">Bỏ trống thì bot không nhắc gì tới liên hệ. Chỉ điền số thật.</span>
+      </label>
+      <label class="f">Website
+        <input type="text" id="b-website" value="${esc((b.contact||{}).website || '')}" placeholder="www.ten-truong.edu.vn">
+      </label>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Màn hình trống</legend>
+    <div class="grid2">
+      <label class="f">Tiêu đề<input type="text" id="b-wtitle" value="${esc((b.welcome||{}).title || '')}"></label>
+      <label class="f">Biểu tượng<input type="text" id="b-wicon" maxlength="4" value="${esc((b.welcome||{}).icon || '💬')}"></label>
+    </div>
+    <label class="f" style="margin-top:12px">Lời giới thiệu<textarea id="b-wtext">${esc((b.welcome||{}).text || '')}</textarea></label>
+    <label class="f" style="margin-top:12px">Câu hỏi gợi ý
+      <textarea id="b-wchips" placeholder="Mỗi dòng một câu">${esc(((b.welcome||{}).chips || []).join('\n'))}</textarea>
+    </label>
+  </fieldset>
+
+  <fieldset style="margin-bottom:0">
+    <legend>Màu nhận diện</legend>
+    <div class="chiprow" id="b-swatches"></div>
+  </fieldset>`;
+}
+
+async function selectBot(slug) {
+  const b = BOTS.find(x => x.slug === slug);
+  if (!b) return;
+  curBot = JSON.parse(JSON.stringify(b));
+  isNewBot = false;
+  botDocIds = new Set();
+  showBotForm(b.name);
+  // Nạp danh sách tài liệu đã gán SAU khi dựng form: form hiện ngay, danh sách
+  // tick vào sau vài trăm mili giây, thay vì bắt người dùng nhìn màn trắng.
+  try {
+    botDocIds = new Set(await api('/assistants/' + encodeURIComponent(slug) + '/documents'));
+    renderDocPicker();
+  } catch {}
+}
+function newBot() {
+  curBot = blankBot(); isNewBot = true; botDocIds = new Set();
+  showBotForm('Trợ lý mới');
+}
+
+function showBotForm(title) {
+  $('bot-form-title').textContent = title;
+  $('bot-form').hidden = false;
+  $('bot-form').innerHTML = botForm(curBot);
+  $('bot-actions').hidden = false;
+  $('bot-empty').hidden = true;
+  $('bot-delete').hidden = isNewBot;
+
+  renderDocPicker();
+
+  const sw = $('b-swatches');
+  PALETTES.forEach(p => {
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'sw';
+    btn.style.background = `linear-gradient(140deg, ${p.c1}, ${p.c2})`;
+    btn.setAttribute('aria-pressed', String((curBot.brand || {}).c1 === p.c1));
+    btn.addEventListener('click', () => {
+      curBot.brand = { ...p };
+      [...sw.children].forEach(x => x.setAttribute('aria-pressed', 'false'));
+      btn.setAttribute('aria-pressed', 'true');
+    });
+    sw.appendChild(btn);
+  });
+  renderBotList();
+}
+
+// --- Chọn tài liệu ngay trong màn cấu hình bot ------------------------------
+let botDocIds = new Set();
+
+function renderDocPicker() {
+  const host = $('b-docs');
+  if (!host) return;
+  if (!DOCS.length) {
+    host.innerHTML = emptyBox('Kho chưa có tài liệu nào', 'Sang mục Kho tài liệu để nạp.');
+    $('b-doc-count').textContent = '';
+    return;
+  }
+  host.innerHTML = DOCS.map(d => `
+    <label class="docpick-row" data-name="${esc((d.title || '').toLowerCase())}">
+      <input type="checkbox" value="${d.id}" ${botDocIds.has(d.id) ? 'checked' : ''}>
+      <span class="t">
+        <b title="${esc(d.title)}">${esc(d.title)}</b>
+        <span class="sub">${esc((DOC_TYPES.find(t => t[0] === d.type) || [,d.type])[1])}
+          · ${esc((ACCESS.find(a => a[0] === d.access) || [,d.access])[1])}
+          ${d.course_code ? '· ' + esc(d.course_code) : ''}</span>
+      </span>
+    </label>`).join('');
+  host.querySelectorAll('input').forEach(i => i.addEventListener('change', () => {
+    const id = Number(i.value);
+    i.checked ? botDocIds.add(id) : botDocIds.delete(id);
+    updateDocCount();
+  }));
+  updateDocCount();
+}
+
+function updateDocCount() {
+  const n = botDocIds.size;
+  $('b-doc-count').textContent = n
+    ? `Đã chọn ${n} tài liệu — bot chỉ đọc đúng những tài liệu này.`
+    : 'Chưa chọn tài liệu nào — bot đọc toàn kho theo hai bộ lọc ở trên.';
+}
+
+document.addEventListener('input', e => {
+  if (e.target.id !== 'b-docsearch') return;
+  const q = e.target.value.trim().toLowerCase();
+  document.querySelectorAll('#b-docs .docpick-row').forEach(r =>
+    r.classList.toggle('hidden', q && !r.dataset.name.includes(q)));
+});
+document.addEventListener('click', e => {
+  if (e.target.id !== 'b-doc-none') return;
+  botDocIds.clear();
+  document.querySelectorAll('#b-docs input').forEach(i => { i.checked = false; });
+  updateDocCount();
+});
+
+function collectBot() {
+  const lines = id => $(id).value.split('\n').map(s => s.trim()).filter(Boolean);
+  return {
+    slug: $('b-slug').value.trim().toLowerCase(),
+    name: $('b-name').value.trim(),
+    tagline: $('b-tagline').value.trim(),
+    corpus_label: $('b-corpus').value.trim() || 'tài liệu hiện có',
+    offer: $('b-offer').value.trim(),
+    doc_types: [...$('b-doctypes').querySelectorAll('input:checked')].map(i => i.value),
+    blocked_topics: lines('b-blocked'),
+    sort_order: Number($('b-sort').value || 0),
+    is_active: $('b-active').checked ? 1 : 0,
+    replies: {
+      greeting: $('b-greeting').value.trim(), out_of_scope: $('b-out').value.trim(),
+      clarify: $('b-clarify').value.trim(), abusive: $('b-abusive').value.trim(),
+    },
+    contact: { hotline: $('b-hotline').value.trim(), website: $('b-website').value.trim() },
+    welcome: {
+      title: $('b-wtitle').value.trim(), text: $('b-wtext').value.trim(),
+      icon: $('b-wicon').value.trim() || '💬', chips: lines('b-wchips'),
+    },
+    brand: curBot.brand || PALETTES[0],
+    access_levels: [...$('b-access').querySelectorAll('input:checked')].map(i => i.value),
+    default_doc_type: $('b-deftype').value || null,
+    // Rỗng = dùng mặc định hệ thống, khác hẳn 0.
+    gen_temperature: $('b-temp').value === '' ? null : Number($('b-temp').value),
+    gen_max_tokens: $('b-maxtok').value === '' ? null : Number($('b-maxtok').value),
+    gen_thinking_budget: Number($('b-think').value || 0),
+  };
+}
+
+$('btn-new-bot').addEventListener('click', newBot);
+$('bot-revert').addEventListener('click', () => {
+  if (isNewBot) newBot(); else selectBot(curBot.slug);
+  toast('Đã hoàn tác');
+});
+$('bot-save').addEventListener('click', e => withBusy(e.currentTarget, async () => {
+  const body = collectBot();
+  if (!body.slug) return toast('Thiếu mã định danh', true);
+  if (!body.name) return toast('Thiếu tên hiển thị', true);
+  try {
+    if (isNewBot) await api('/assistants', { method: 'POST', body: JSON.stringify(body) });
+    else await api('/assistants/' + encodeURIComponent(body.slug), { method: 'PUT', body: JSON.stringify(body) });
+    // Danh sách tài liệu lưu bằng một lượt riêng — thay thế trọn bộ, đúng
+    // bằng những ô đang tick.
+    await api('/assistants/' + encodeURIComponent(body.slug) + '/documents',
+      { method: 'PUT', body: JSON.stringify({ document_ids: [...botDocIds] }) });
+    isNewBot = false;
+    await loadBots();
+    await loadDocs();
+    await selectBot(body.slug);
+    renderOverview();
+    toast('Đã lưu — trang chat cập nhật khi tải lại');
+  } catch (err) { toast('Lưu không được: ' + err.message, true); }
+}));
+$('bot-delete').addEventListener('click', async () => {
+  if (!curBot || isNewBot) return;
+  if (!confirm(`Xóa trợ lý “${curBot.name}”? Bong bóng của nó biến mất khỏi trang chat; tài liệu vẫn giữ nguyên.`)) return;
+  try {
+    await api('/assistants/' + encodeURIComponent(curBot.slug), { method: 'DELETE' });
+    curBot = null; $('bot-form').hidden = true; $('bot-actions').hidden = true; $('bot-empty').hidden = false;
+    await loadBots(); await loadDocs(); renderOverview();
+    toast('Đã xóa');
+  } catch (err) { toast('Xóa không được: ' + err.message, true); }
+});
+
+// ===========================================================================
+// Kho tài liệu
+// ===========================================================================
+// Bộ lọc soi ĐÚNG luật đọc của backend, không phải chỉ liệt kê tài liệu đã gán:
+//   bot ĐÃ gán tài liệu -> chỉ những tài liệu đó
+//   bot CHƯA gán        -> toàn kho, lọc theo loại và mức quyền bot khai
+// Nhờ vậy nhìn vào là biết bot thật sự đọc được gì, không phải suy trong đầu.
+function docsInScope() {
+  if (!docFilter) return DOCS;
+  if (docFilter === 'chua-gan') return DOCS.filter(d => !d.assistant_slugs);
+
+  const bot = botBy(docFilter);
+  if (!bot) return [];
+
+  const assigned = DOCS.filter(d => (d.assistant_slugs || '').split(',').includes(docFilter));
+  if (assigned.length) return assigned;
+
+  const types = new Set(bot.doc_types || []);
+  const levels = new Set(bot.access_levels || []);
+  return DOCS.filter(d =>
+    (!types.size || types.has(d.type)) && (!levels.size || levels.has(d.access)));
+}
+
+function renderDocFilter() {
+  const count = slug => {
+    if (slug === 'chua-gan') return DOCS.filter(d => !d.assistant_slugs).length;
+    const saved = docFilter; docFilter = slug;
+    const n = docsInScope().length; docFilter = saved;
+    return n;
+  };
+  $('doc-filter').innerHTML =
+    `<button class="fbtn ${docFilter === '' ? 'on' : ''}" data-f="" type="button">Tất cả <span class="n">${DOCS.length}</span></button>`
+    + BOTS.map(b => `<button class="fbtn ${docFilter === b.slug ? 'on' : ''}" data-f="${esc(b.slug)}" type="button">
+         <span class="botdot" style="background:linear-gradient(140deg,${botColor(b)},${(b.brand||{}).c2||botColor(b)})">${botIcon(b)}</span>
+         ${esc(b.name)} <span class="n">${count(b.slug)}</span></button>`).join('')
+    + `<button class="fbtn ${docFilter === 'chua-gan' ? 'on' : ''}" data-f="chua-gan" type="button">Chưa gán <span class="n">${count('chua-gan')}</span></button>`;
+  $('doc-filter').querySelectorAll('[data-f]').forEach(el =>
+    el.addEventListener('click', () => { docFilter = el.dataset.f; renderDocFilter(); renderDocs(); }));
+}
+
+function renderDocs() {
+  const rows = docsInScope();
+  const host = $('doc-wrap');
+  if (!rows.length) {
+    host.innerHTML = emptyBox(
+      docFilter ? 'Trợ lý này chưa đọc được tài liệu nào' : 'Kho trống',
+      docFilter === 'chua-gan'
+        ? 'Mọi tài liệu đều đã gán cho ít nhất một trợ lý.'
+        : (docFilter ? 'Không có tài liệu nào khớp loại và mức quyền bot đang khai. Nới cấu hình ở mục Trợ lý ảo, hoặc nạp thêm tài liệu.'
+                     : 'Bấm “Nạp tài liệu” hoặc “Quét thư mục server” ở mục Tổng quan.'));
+    updateBulk();
+    return;
+  }
+  host.innerHTML = `<table>
+    <thead><tr>
+      <th class="tight"><input type="checkbox" id="doc-all"></th>
+      <th class="tight">Trợ lý</th>
+      <th>Tài liệu</th><th>Môn</th><th>Loại</th><th>Quyền</th>
+      <th>Trạng thái</th><th>Chunk</th>
+    </tr></thead>
+    <tbody>${rows.map(d => {
+      const slugs = (d.assistant_slugs || '').split(',').filter(Boolean);
+      const vecOk = d.chunks > 0 && d.embedded >= d.chunks;
+      return `<tr data-id="${d.id}">
+        <td class="tight"><input type="checkbox" class="doc-pick"></td>
+        <td class="tight">
+          <span class="botcell-ro">
+            ${slugs.length ? slugs.map(s => {
+              const b = botBy(s);
+              return `<span class="botdot" style="background:linear-gradient(140deg,${botColor(b)},${(b&&b.brand&&b.brand.c2)||botColor(b)})" title="${esc(b ? b.name : s)}">${botIcon(b)}</span>`;
+            }).join('') : '<span style="font-style:italic">mọi bot</span>'}
+          </span>
+        </td>
+        <td><div class="doc-title" title="${esc(d.title)}">${esc(d.title)}</div>
+            <div class="sub">${esc(d.file_path || '')}</div></td>
+        <td>${esc(d.course_code || '—')}</td>
+        <td>${esc((DOC_TYPES.find(t => t[0] === d.type) || [,d.type])[1])}</td>
+        <td>${esc((ACCESS.find(a => a[0] === d.access) || [,d.access])[1])}</td>
+        <td><span class="badge ${esc(d.status)}">${esc(d.status)}</span></td>
+        <td class="tight">${d.chunks || 0}${d.chunks ? (vecOk ? ' <span class="badge indexed">vec</span>' : ' <span class="badge pending">thiếu vec</span>') : ''}</td>
+      </tr>`;
+    }).join('')}</tbody></table>`;
+
+  host.querySelectorAll('.doc-pick').forEach(c => c.addEventListener('change', updateBulk));
+  $('doc-all').addEventListener('change', e => {
+    host.querySelectorAll('.doc-pick').forEach(c => { c.checked = e.target.checked; });
+    updateBulk();
+  });
+  updateBulk();
+}
+
+function pickedDocIds() {
+  return [...$('doc-wrap').querySelectorAll('.doc-pick')]
+    .filter(c => c.checked).map(c => Number(c.closest('tr').dataset.id));
+}
+function updateBulk() {
+  const n = pickedDocIds().length;
+  for (const id of ['btn-bulk-reindex', 'btn-bulk-delete']) $(id).disabled = !n;
+}
+
+$('btn-bulk-reindex').addEventListener('click', e => withBusy(e.currentTarget, async () => {
+  const ids = pickedDocIds();
+  let ok = 0;
+  for (const id of ids) { try { await api('/reindex/' + id, { method: 'POST' }); ok++; } catch {} }
+  toast(`Đã nạp lại ${ok}/${ids.length}`); await loadDocs(); renderOverview();
+}));
+$('btn-bulk-delete').addEventListener('click', async () => {
+  const ids = pickedDocIds();
+  if (!confirm(`Xóa vĩnh viễn ${ids.length} tài liệu? Cả file gốc cũng bị xóa.`)) return;
+  try {
+    await api('/documents/delete', { method: 'POST', body: JSON.stringify({ document_ids: ids }) });
+    toast('Đã xóa'); await loadDocs(); renderOverview();
+  } catch (err) { toast('Xóa không được: ' + err.message, true); }
+});
+
+// ===== Nạp tài liệu ========================================================
+$('btn-upload').addEventListener('click', () => {
+  const bot = docFilter && docFilter !== 'chua-gan' ? botBy(docFilter) : null;
   const bk = document.createElement('div');
   bk.className = 'modalbk';
-  bk.id = 'doc-preview';
-  // iframe không gửi được header → truyền danh tính qua ?uid= (API hỗ trợ sẵn)
-  const src = `/api/v1/documents/${documentId}/preview?uid=${HEADERS['X-User-Id']}`;
-  bk.innerHTML = `
-    <div class="modal" style="display:flex;flex-direction:column;height:92vh;padding:0">
-      <div class="modal-head" style="padding:12px 18px;border-bottom:1px solid var(--border);margin:0">
-        <b style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📄 ${esc(title || '')}</b>
-        <span style="display:flex;gap:8px">
-          <a class="ghost" style="text-decoration:none;padding:8px 14px;border:1px solid var(--border);border-radius:9px;font-size:13px"
-             href="/api/v1/documents/${documentId}/download" target="_blank">⬇ Tải về</a>
-          <button class="ghost" id="dp-close">✕</button>
-        </span>
-      </div>
-      <iframe id="dp-frame" src="${src}" style="flex:1;width:100%;border:0"></iframe>
-    </div>`;
-  document.body.appendChild(bk);
-  bk.addEventListener('click', e => { if (e.target === bk) closeDocPreview(); });
-  bk.querySelector('#dp-close').addEventListener('click', closeDocPreview);
-
-  // File không có bản xem trước (md/txt, hoặc Office chưa convert) → API trả
-  // 404: báo rõ thay vì để iframe trắng trơn.
-  fetch(src).then(r => {
-    if (r.status === 404) {
-      bk.querySelector('#dp-frame').outerHTML =
-        '<div style="flex:1;display:grid;place-items:center;color:var(--muted);font-size:13.5px;padding:24px;text-align:center">'
-        + 'Định dạng này chưa có bản xem trước.<br>File Office cần nạp lại để hệ thống chuyển sang PDF, '
-        + 'hoặc bạn bấm “Tải về”.</div>';
-    }
-  }).catch(() => {});
-}
-
-function closeDocPreview() {
-  document.getElementById('doc-preview')?.remove();
-}
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closeDocPreview();
-});
-
-document.getElementById('docs-refresh').addEventListener('click', loadDocs);
-document.getElementById('docs-all').addEventListener('change', e => {
-  for (const c of document.querySelectorAll('.d-check')) c.checked = e.target.checked;
-});
-
-document.getElementById('reindex-selected').addEventListener('click', async (e) => {
-  const chosen = [...document.querySelectorAll('#docs-table tbody tr')]
-    .filter(tr => tr.querySelector('.d-check')?.checked);
-  if (!chosen.length) { alert('Chưa tick chọn tài liệu nào.'); return; }
-  if (!confirm(`Xử lý lại ${chosen.length} tài liệu đã chọn?`)) return;
-
-  e.target.disabled = true;
-  for (const tr of chosen) {
-    const statusEl = tr.querySelector('.d-status');
-    statusEl.textContent = '⏳ đang xử lý…';
-    try {
-      const res = await fetch(`/api/v1/admin/reindex/${tr.dataset.id}`, {
-        method: 'POST', headers: HEADERS,
-      });
-      const data = await res.json();
-      statusEl.innerHTML = res.ok
-        ? `<span style="color:var(--ok)">✓ ${esc(data.status)}</span>`
-        : `<span style="color:var(--err)">✗ ${esc(data.detail || res.status)}</span>`;
-    } catch { statusEl.innerHTML = '<span style="color:var(--err)">✗ mất kết nối</span>'; }
-  }
-  e.target.disabled = false;
-  loadPending();
-});
-
-document.getElementById('delete-selected').addEventListener('click', async (e) => {
-  const chosen = [...document.querySelectorAll('#docs-table tbody tr')]
-    .filter(tr => tr.querySelector('.d-check')?.checked);
-  if (!chosen.length) { alert('Chưa tick chọn tài liệu nào.'); return; }
-  if (!confirm(
-    `XÓA VĨNH VIỄN ${chosen.length} tài liệu đã chọn?\n\n` +
-    'Cả bản ghi, các đoạn đã đánh chỉ mục, FILE GỐC trên máy chủ và dòng ' +
-    'manifest đều bị xóa — không hoàn tác được.'
-  )) return;
-
-  e.target.disabled = true;
-  const logEl = document.getElementById('scanlog');
-  try {
-    const res = await fetch('/api/v1/admin/documents/delete', {
-      method: 'POST',
-      headers: { ...HEADERS, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ document_ids: chosen.map(tr => Number(tr.dataset.id)) }),
-    });
-    const data = await res.json();
-    logEl.textContent = res.ok
-      ? `Đã xóa ${data.count} tài liệu (${data.files_removed} file trên đĩa):\n`
-        + data.deleted.map(d => `  🗑 ${d.title}`).join('\n')
-      : 'Xóa thất bại (' + res.status + '): ' + (data.detail || '');
-  } catch { logEl.textContent = 'Mất kết nối máy chủ.'; }
-  e.target.disabled = false;
-  loadDocs();
-  loadPending();
-});
-
-// --- Chờ xử lý ---------------------------------------------------------------
-async function loadPending() {
-  const body = document.querySelector('#pending-table tbody');
-  let rows;
-  try {
-    const res = await fetch('/api/v1/admin/pending', { headers: HEADERS });
-    if (!res.ok) { body.innerHTML = '<tr><td colspan="3">Không tải được danh sách (' + res.status + ').</td></tr>'; return; }
-    rows = await res.json();
-  } catch {
-    body.innerHTML = '<tr><td colspan="3">Mất kết nối máy chủ — bấm Làm mới thử lại.</td></tr>';
-    return;
-  }
-  if (!rows.length) {
-    body.innerHTML = '<tr><td colspan="3" style="color:var(--muted)">Không có file nào chờ xử lý 🎉</td></tr>';
-    return;
-  }
-  body.innerHTML = rows.map(r => `
-    <tr data-id="${r.id}">
-      <td class="file-name">${esc(r.file_path)}
-        <div class="err">${esc(r.error_message || '')}</div></td>
-      <td><span class="badge ${esc(r.status)}">${esc(r.status)}</span></td>
-      <td>
-        <div class="row">
-          <select class="as-course">${courseOptions('')}</select>
-          <select class="as-type">${typeOptions()}</select>
-          <select class="as-access">
-            <option value="public">Công khai</option><option value="faculty">Theo khoa</option>
-            <option value="course">Theo lớp</option><option value="staff">Cán bộ/GV</option>
+  bk.innerHTML = `<div class="modal">
+    <div class="modal-head"><h3>Nạp tài liệu${bot ? ' cho ' + esc(bot.name) : ''}</h3>
+      <span class="grow"></span><button class="x">✕</button></div>
+    <div class="modal-body">
+      ${bot ? `<p class="sub" style="margin:0 0 12px">Tài liệu nạp ở đây tự gán cho <b>${esc(bot.name)}</b>${
+          bot.default_doc_type ? `, loại mặc định <b>${esc((DOC_TYPES.find(t=>t[0]===bot.default_doc_type)||[,''])[1])}</b>` : ''}.</p>`
+        : `<p class="sub" style="margin:0 0 12px">Đang ở chế độ “Tất cả” nên tài liệu không gán bot nào — mọi trợ lý đều đọc được. Chọn một trợ lý ở bộ lọc trước khi nạp nếu muốn gán riêng.</p>`}
+      <div class="drop" id="drop">Kéo thả file vào đây, hoặc bấm để chọn<br>
+        <span class="sub">PDF · DOCX · PPTX · TXT · MD — tối đa 100 MB mỗi file</span></div>
+      <input type="file" id="picker" multiple hidden accept=".pdf,.docx,.pptx,.txt,.md">
+      <div class="grid2" style="margin-top:14px">
+        <label class="f">Môn học
+          <select id="u-course"><option value="">— không gắn môn —</option>
+            ${COURSES.map(c => `<option value="${esc(c.code)}">${esc(c.code)} — ${esc(c.name)}</option>`).join('')}
+          </select></label>
+        <label class="f">Loại tài liệu
+          <select id="u-type"><option value="">— tự đoán —</option>
+            ${DOC_TYPES.map(([v,l]) => `<option value="${v}" ${bot && bot.default_doc_type===v?'selected':''}>${l}</option>`).join('')}
+          </select></label>
+        <label class="f">Quyền truy cập
+          <select id="u-access">
+            ${(bot && bot.access_levels && bot.access_levels.length
+                ? ACCESS.filter(([v]) => bot.access_levels.includes(v))
+                : ACCESS
+              ).map(([v,l]) => `<option value="${v}">${l}</option>`).join('')}
           </select>
-          <button class="as-btn">Gán &amp; nạp lại</button>
-          ${r.status === 'needs_ocr'
-            ? '<button class="ocr-btn warn" title="Đọc lại từng trang bằng Gemini vision rồi nạp — vài trang mất ~10-30 giây">🔍 OCR bằng AI</button>'
-            : ''}
-        </div>
-      </td>
-    </tr>`).join('');
+          ${bot && bot.access_levels && bot.access_levels.length
+            ? '<span class="note">Chỉ liệt kê các mức trợ lý này phục vụ.</span>' : ''}
+        </label>
+      </div>
+      <div id="uplist" style="margin-top:12px"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn primary" id="u-go" disabled><span class="spin"></span>Tải lên tất cả</button>
+      <button class="btn" data-cancel>Đóng</button>
+    </div></div>`;
+  document.body.appendChild(bk);
 
-  for (const btn of body.querySelectorAll('.ocr-btn')) {
-    btn.addEventListener('click', async (e) => {
-      const tr = e.target.closest('tr');
-      e.target.disabled = true; e.target.textContent = '🔍 Đang OCR…';
+  const close = () => bk.remove();
+  bk.querySelector('.x').addEventListener('click', close);
+  bk.querySelector('[data-cancel]').addEventListener('click', close);
+  bk.addEventListener('click', e => { if (e.target === bk) close(); });
+
+  let files = [];
+  const drop = bk.querySelector('#drop'), picker = bk.querySelector('#picker');
+  const list = bk.querySelector('#uplist'), go = bk.querySelector('#u-go');
+
+  const render = () => {
+    list.innerHTML = files.map((f, i) =>
+      `<div class="uprow"><span class="name">${esc(f.name)}</span>
+       <span class="st" data-st="${i}">${(f.size/1048576).toFixed(1)} MB</span></div>`).join('');
+    go.disabled = !files.length;
+  };
+  const add = arr => { files = files.concat([...arr]); render(); };
+
+  drop.addEventListener('click', () => picker.click());
+  picker.addEventListener('change', () => add(picker.files));
+  ['dragenter','dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+  ['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+  drop.addEventListener('drop', e => add(e.dataTransfer.files));
+
+  go.addEventListener('click', () => withBusy(go, async () => {
+    const q = new URLSearchParams();
+    if (bk.querySelector('#u-course').value) q.set('course_code', bk.querySelector('#u-course').value);
+    if (bk.querySelector('#u-type').value) q.set('doc_type', bk.querySelector('#u-type').value);
+    q.set('access', bk.querySelector('#u-access').value);
+    if (bot) q.set('assistant', bot.slug);
+
+    let ok = 0;
+    for (let i = 0; i < files.length; i++) {
+      const st = bk.querySelector(`[data-st="${i}"]`);
+      st.textContent = 'đang tải…';
+      const fd = new FormData();
+      fd.append('file', files[i]);
       try {
-        const res = await fetch(`/api/v1/admin/ocr/${tr.dataset.id}`, {
-          method: 'POST', headers: HEADERS,
-        });
-        const data = await res.json();
-        if (!res.ok || data.status !== 'indexed') {
-          alert('OCR: ' + (data.message || data.detail || res.status));
-        }
-      } catch { alert('Mất kết nối máy chủ.'); }
-      loadPending();
-      loadDocs();
-    });
-  }
-
-  for (const btn of body.querySelectorAll('.as-btn')) {
-    btn.addEventListener('click', async (e) => {
-      const tr = e.target.closest('tr');
-      const payload = {
-        document_id: Number(tr.dataset.id),
-        course_code: tr.querySelector('.as-course').value || null,
-        doc_type: tr.querySelector('.as-type').value,
-        access: tr.querySelector('.as-access').value,
-      };
-      if (!payload.doc_type) { alert('Chọn loại tài liệu đã.'); return; }
-      if (payload.doc_type !== 'quy_che' && !payload.course_code) { alert('Loại này phải chọn môn.'); return; }
-      e.target.disabled = true; e.target.textContent = 'Đang nạp…';
-      try {
-        const res = await fetch('/api/v1/admin/assign', {
-          method: 'POST',
-          headers: { ...HEADERS, 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        const data = await res.json();
-        if (!res.ok) alert('Lỗi: ' + (data.detail || res.status));
-      } catch { alert('Mất kết nối máy chủ.'); }
-      loadPending();
-      loadDocs();
-    });
-  }
-}
-document.getElementById('pending-refresh').addEventListener('click', loadPending);
-
-// --- Nạp theo lô -------------------------------------------------------------
-async function runBatch(btn, url, busyLabel, idleLabel) {
-  const logEl = document.getElementById('scanlog');
-  btn.disabled = true; btn.textContent = busyLabel;
-  try {
-    const res = await fetch(url, { method: 'POST', headers: HEADERS });
-    const data = await res.json();
-    if (res.ok) {
-      const summary = Object.entries(data.summary || {}).map(([k, v]) => `${k}: ${v}`).join(', ');
-      const lines = [(summary || 'không có gì để làm')];
-      for (const f of data.files || []) lines.push(`${f.status === 'indexed' ? '+' : '!'} ${f.file} — ${f.status}`);
-      logEl.textContent = lines.join('\n');
-    } else logEl.textContent = 'Lỗi ' + res.status + ': ' + (data.detail || '');
-  } catch { logEl.textContent = 'Mất kết nối máy chủ.'; }
-  btn.disabled = false; btn.textContent = idleLabel;
-  loadPending();
-  loadDocs();
-}
-
-document.getElementById('scan-btn').addEventListener('click', (e) =>
-  runBatch(e.target, '/api/v1/admin/scan', 'Đang quét…', 'Quét file mới'));
-
-document.getElementById('reprocess-btn').addEventListener('click', (e) => {
-  if (!confirm('Xử lý lại TOÀN BỘ tài liệu trong bảng documents?\nToàn kho sẽ được trích xuất, gán metadata, chunk và embed lại — có thể mất vài phút và tốn phí embed.')) return;
-  runBatch(e.target, '/api/v1/admin/reprocess-all', 'Đang xử lý lại…', 'Xử lý lại toàn bộ');
+        const res = await fetch('/api/v1/admin/documents?' + q, { method: 'POST', headers: headers(), body: fd });
+        if (!res.ok) throw new Error((await res.json()).detail || res.status);
+        st.textContent = '✓ đang xử lý ở nền'; ok++;
+      } catch (err) { st.textContent = '✕ ' + String(err.message).slice(0, 40); }
+    }
+    toast(`Đã tải lên ${ok}/${files.length} — pipeline chạy ở nền`);
+    await loadDocs(); renderOverview();
+  }));
 });
 
-// Khởi tạo: danh mục môn nạp trước (bảng chờ-xử-lý cần cho dropdown), nhưng
-// dù nó hỏng thì hai bảng vẫn phải hiện — không ai phải bấm "Làm mới" mới thấy.
-(async () => {
-  await ensureAdminAccess();
-  await loadCourses();
-  loadDocs();
-  loadPending();
-})();
+// ===========================================================================
+// Chờ xử lý
+// ===========================================================================
+async function loadPending() {
+  const host = $('pending-wrap');
+  skeletonTable(host, 5, 3);
+  try {
+    PENDING = await api('/pending');
+    $('n-pending').textContent = PENDING.length;
+    if (!PENDING.length) {
+      host.innerHTML = emptyBox('Không có gì chờ xử lý', 'Mọi tài liệu đã nạp xong.');
+      renderOverview();
+      return;
+    }
+    host.innerHTML = `<table>
+      <thead><tr><th>Tài liệu</th><th>Trạng thái</th><th>Lý do</th><th>Môn</th><th>Loại</th><th class="tight"></th></tr></thead>
+      <tbody>${PENDING.map(p => `<tr data-id="${p.id}">
+        <td><div class="doc-title" title="${esc(p.title || p.file_path)}">${esc(p.title || p.file_path)}</div></td>
+        <td><span class="badge ${esc(p.status)}">${esc(p.status)}</span></td>
+        <td class="sub" style="max-width:260px">${esc(p.error_message || '')}</td>
+        <td><select class="p-course"><option value="">—</option>
+          ${COURSES.map(c => `<option value="${esc(c.code)}" ${p.course_code===c.code?'selected':''}>${esc(c.code)}</option>`).join('')}
+        </select></td>
+        <td><select class="p-type"><option value="">—</option>
+          ${DOC_TYPES.map(([v,l]) => `<option value="${v}" ${p.type===v?'selected':''}>${l}</option>`).join('')}
+        </select></td>
+        <td class="tight">
+          <button class="btn sm p-assign"><span class="spin"></span>Gán &amp; nạp lại</button>
+          ${p.status === 'needs_ocr' ? '<button class="btn sm p-ocr"><span class="spin"></span>OCR bằng AI</button>' : ''}
+        </td></tr>`).join('')}</tbody></table>`;
+
+    host.querySelectorAll('tr[data-id]').forEach(tr => {
+      const id = Number(tr.dataset.id);
+      tr.querySelector('.p-assign').addEventListener('click', e => withBusy(e.currentTarget, async () => {
+        try {
+          await api('/assign', { method: 'POST', body: JSON.stringify({
+            document_id: id,
+            course_code: tr.querySelector('.p-course').value || null,
+            doc_type: tr.querySelector('.p-type').value || null,
+          })});
+          toast('Đã gán, đang nạp lại'); await loadPending(); await loadDocs();
+        } catch (err) { toast('Không gán được: ' + err.message, true); }
+      }));
+      tr.querySelector('.p-ocr')?.addEventListener('click', e => withBusy(e.currentTarget, async () => {
+        try { const r = await api('/ocr/' + id, { method: 'POST' });
+          toast(`OCR xong ${r.pages ?? ''} trang`); await loadPending(); await loadDocs(); }
+        catch (err) { toast('OCR không được: ' + err.message, true); }
+      }));
+    });
+  } catch (e) { errBox(host, e, loadPending); }
+}
+
+// ===========================================================================
+// Chi phí
+// ===========================================================================
+async function loadMetrics() {
+  skeletonTiles($('cost-tiles'), 4);
+  $('route-dist').innerHTML = '<div class="skel" style="width:60%"></div>';
+  try {
+    const m = await api('/metrics?days=7');
+    $('cost-tiles').innerHTML = `
+      <div class="tile"><div class="k">Truy vấn</div><div class="v">${m.total_queries ?? 0}</div><div class="n">7 ngày</div></div>
+      <div class="tile"><div class="k">Tổng chi phí</div><div class="v">${(m.total_cost_usd ?? 0).toFixed(4)}</div><div class="n">USD</div></div>
+      <div class="tile"><div class="k">Mỗi truy vấn</div><div class="v">${m.total_queries ? (m.total_cost_usd / m.total_queries).toFixed(6) : '0'}</div><div class="n">USD trung bình</div></div>
+      <div class="tile ok"><div class="k">Cache hit</div><div class="v">${Math.round((m.cache_hit_rate ?? 0) * 100)}%</div><div class="n">không tốn token</div></div>`;
+    const rows = m.route_distribution || [];
+    const max = Math.max(1, ...rows.map(r => r.count ?? r.n ?? 0));
+    $('route-dist').innerHTML = rows.length ? rows.map(r => {
+      const n = r.count ?? r.n ?? 0;
+      return `<div style="display:grid;grid-template-columns:110px 1fr 50px;align-items:center;gap:11px;padding:5px 0">
+        <span style="font-size:12.5px">${esc(r.route || r.branch || '—')}</span>
+        <span style="height:9px;background:var(--line-soft);border-radius:0 5px 5px 0">
+          <span style="display:block;height:9px;width:${(n/max*100).toFixed(1)}%;background:var(--accent);border-radius:0 5px 5px 0"></span></span>
+        <span class="sub" style="text-align:right;font-variant-numeric:tabular-nums">${n}</span>
+      </div>`;
+    }).join('') : emptyBox('Chưa có nhật ký', 'Hỏi vài câu ở trang chat rồi quay lại.');
+  } catch (e) { errBox($('cost-tiles'), e, loadMetrics); $('route-dist').innerHTML = ''; }
+}
+
+// ===========================================================================
+// Trang tư vấn nhúng
+// ===========================================================================
+// Nạp muộn: chỉ gắn src khi người dùng mở mục này lần đầu, để lúc mới vào
+// trang quản trị không tốn thêm một lượt tải cả trang chat.
+function showTuVan() {
+  const frame = $('tv-frame');
+  if (!frame.src) frame.src = '/?embed=1';
+}
+$('tv-reload').addEventListener('click', e => withBusy(e.currentTarget, async () => {
+  const frame = $('tv-frame');
+  // Đổi tham số mỗi lần để chắc chắn không dính bản đã lưu trong bộ nhớ đệm.
+  frame.src = '/?embed=1&r=' + Date.now();
+  await new Promise(r => { frame.onload = r; setTimeout(r, 4000); });
+  toast('Đã tải lại trang tư vấn');
+}));
+
+// ===========================================================================
+// Nạp dữ liệu
+// ===========================================================================
+async function loadBots() {
+  try { BOTS = await api('/assistants'); renderBotList(); }
+  catch (e) { $('bot-list').innerHTML = emptyBox('Không tải được trợ lý', e.message); }
+}
+async function loadDocs() {
+  const host = $('doc-wrap');
+  if (!DOCS.length) skeletonTable(host, 8, 6);
+  try {
+    DOCS = await api('/documents');
+    $('n-docs').textContent = DOCS.length;
+    renderDocFilter(); renderDocs();
+  } catch (e) { errBox(host, e, loadDocs); }
+}
+async function loadCourses() {
+  try { COURSES = await api('/courses'); } catch { COURSES = []; }
+}
+
+async function loadAll() {
+  skeletonTiles($('tiles'), 6);
+  $('overview-bots').innerHTML = '<div class="skel" style="width:70%"></div>';
+  // Bot phải xong TRƯỚC tài liệu: bộ lọc và cột trợ lý của bảng kho đọc BOTS
+  // để dựng chip và icon. Chạy song song thì có lúc bảng dựng lúc BOTS còn
+  // rỗng, chip bot biến mất mà không có lỗi nào báo.
+  await loadBots();
+  await Promise.all([loadDocs(), loadCourses()]);
+  try { PENDING = await api('/pending'); $('n-pending').textContent = PENDING.length; } catch {}
+  renderOverview();
+}
+
+loadAll();
 </script>
 </body>
 </html>

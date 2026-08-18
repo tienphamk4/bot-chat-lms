@@ -136,44 +136,199 @@ class TestRagPrompt:
         assert "gạch đầu dòng" in RAG_SYSTEM
 
 
-class TestNotFoundEmptyScope:
-    """Kho trống thì phải nói thẳng, không xúi đổi từ khóa (sự cố 14/08)."""
+class TestNotFoundNguoiDung:
+    """Câu không-tìm-thấy chỉ được nói chuyện của NGƯỜI DÙNG.
 
-    def _route(self):
-        from app.schemas import RouterResult, Intent
+    Bản cũ chìa ra chuyện vận hành ("kho chưa có tài liệu nào được nạp", "báo
+    giúp quản trị viên bổ sung") và liệt kê tên môn lấy từ toàn kho — với bot
+    tuyển sinh thì thành ra mời đọc "Kiểm thử phần mềm".
+    """
+
+    def _route(self, question="điều kiện dự thi"):
+        from app.schemas import Intent, RouterResult
 
         return RouterResult(
-            intent=Intent.ask_content, standalone_question="điều kiện dự thi",
+            intent=Intent.ask_content, standalone_question=question,
             keywords=["quy chế"],
         )
 
-    def test_kho_quy_che_trong(self, monkeypatch):
-        import app.db
+    def test_nhac_lai_chu_de_va_pham_vi_cua_bot(self):
         from app.core import render
+        from app.core.personas import Persona
 
-        render._indexed_cache.clear()
-        monkeypatch.setattr(app.db, "fetch_value", lambda *a, **k: 0)
-        answer = render.render_not_found(self._route(), None, "quy_che")
-        assert "chưa có văn bản quy chế" in answer
-        assert "từ khóa" not in answer
+        bot = Persona(
+            slug="tuyen-sinh",
+            corpus_label="tài liệu tuyển sinh hiện có",
+            offer="Anh/chị cần em tư vấn ngành học nào ạ?",
+        )
+        answer = render.render_not_found(
+            self._route("Trường có những ngành nào"), None, None, None, bot
+        )
+        assert "Trường có những ngành nào" in answer
+        assert "tài liệu tuyển sinh hiện có" in answer
+        assert "Anh/chị cần em tư vấn ngành học nào ạ?" in answer
 
-    def test_kho_con_tai_lieu_giu_goi_y(self, monkeypatch):
-        import app.db
+    def test_khong_noi_chuyen_quan_tri(self):
         from app.core import render
+        from app.core.personas import Persona
 
-        render._indexed_cache.clear()
-        monkeypatch.setattr(app.db, "fetch_value", lambda *a, **k: 5)
-        answer = render.render_not_found(self._route(), None, "quy_che")
-        assert "từ khóa" in answer
+        answer = render.render_not_found(
+            self._route(), None, "quy_che", None,
+            Persona(slug="x", corpus_label="tài liệu hiện có", offer="Anh/chị hỏi tiếp nhé."),
+        )
+        for cam in ("quản trị viên", "được nạp", "kho hiện chưa", "Kho tài liệu"):
+            assert cam.lower() not in answer.lower(), f"lộ chuyện vận hành: {cam}"
 
-    def test_db_hong_roi_ve_thong_diep_cu(self, monkeypatch):
-        import app.db
+    def test_khong_goi_y_ten_mon_cua_bot_khac(self):
+        """Không liệt kê gì hết — nên không thể chìa nhầm môn hay lộ tài liệu
+        ngoài quyền."""
         from app.core import render
+        from app.core.personas import Persona
 
-        def boom(*a, **k):
-            raise RuntimeError("db down")
+        answer = render.render_not_found(
+            self._route(), None, None, None,
+            Persona(slug="tuyen-sinh", corpus_label="tài liệu tuyển sinh", offer=""),
+        )
+        assert "Kiểm thử" not in answer
+        assert "em đang có nội dung về" not in answer
 
-        render._indexed_cache.clear()
-        monkeypatch.setattr(app.db, "fetch_value", boom)
-        answer = render.render_not_found(self._route(), None, "quy_che")
-        assert "từ khóa" in answer  # không chắc kho trống thì không đổ oan
+    def test_dau_moi_lien_he_theo_tung_bot(self):
+        from app.core import render
+        from app.core.personas import Persona
+
+        bot = Persona(
+            slug="tuyen-sinh", corpus_label="tài liệu tuyển sinh", offer="",
+            contact={"hotline": "1900 561 595", "website": "hvnh.edu.vn"},
+        )
+        answer = render.render_not_found(self._route(), None, None, None, bot)
+        assert "1900 561 595" in answer and "hvnh.edu.vn" in answer
+
+    def test_khong_khai_lien_he_thi_khong_nhac(self):
+        from app.core import render
+        from app.core.personas import Persona
+
+        answer = render.render_not_found(
+            self._route(), None, None, None, Persona(slug="x", offer="")
+        )
+        assert "liên hệ" not in answer
+
+
+class TestPhamViTheoBot:
+    """Ranh giới giữa các bot là ranh giới CỨNG, không phải scope mềm.
+
+    Lỗi đã gặp khi dựng: `hybrid_search` gọi hai kênh bằng tham số THEO VỊ TRÍ,
+    nên tham số `assistant_slug` thêm sau không bao giờ tới nơi — bot tuyển
+    sinh vẫn chìa ra giáo trình kiểm thử phần mềm, mà không có lỗi nào báo.
+    """
+
+    def test_hai_kenh_hybrid_nhan_dung_slug(self):
+        import inspect
+
+        from app.core import retrieval
+
+        src = inspect.getsource(retrieval.hybrid_search)
+        # Phải truyền theo TÊN. Truyền theo vị trí là im lặng rơi mất ranh giới.
+        assert src.count("assistant_slug=assistant_slug") >= 3, (
+            "hybrid_search phải chuyền assistant_slug cho cả chunk_search và "
+            "vector_search ở cả hai nhánh (song song và tuần tự)"
+        )
+
+    def test_moi_ham_truy_hoi_deu_nhan_assistant_slug(self):
+        import inspect
+
+        from app.core import retrieval
+
+        for name in ("metadata_search", "title_search", "chunk_search",
+                     "vector_search", "hybrid_search"):
+            params = inspect.signature(getattr(retrieval, name)).parameters
+            assert "assistant_slug" in params, f"{name} thiếu assistant_slug"
+
+    def test_khong_khai_gi_thi_khong_siet(self, monkeypatch):
+        from app.core import retrieval
+
+        retrieval.clear_assistant_scope_cache()
+        monkeypatch.setattr(retrieval, "_assistant_scope", lambda slug: (False, ()))
+        params = {}
+        assert retrieval._assistant_condition("bot-nao-do", params) == ""
+        assert not params
+
+    def test_da_gan_tai_lieu_thi_siet_theo_tai_lieu(self, monkeypatch):
+        from app.core import retrieval
+
+        retrieval.clear_assistant_scope_cache()
+        monkeypatch.setattr(retrieval, "_assistant_scope", lambda slug: (True, ()))
+        params = {}
+        sql = retrieval._assistant_condition("tuyen-sinh", params)
+        assert "assistant_documents" in sql and "EXISTS" in sql
+        assert params["assistant_slug"] == "tuyen-sinh"
+
+    def test_khai_nhieu_muc_quyen_thi_loc_theo_ca_danh_sach(self, monkeypatch):
+        """Bot phục vụ nhiều mức quyền — mệnh đề phải là IN, không phải một giá trị."""
+        from app.core import retrieval
+
+        retrieval.clear_assistant_scope_cache()
+        monkeypatch.setattr(
+            retrieval, "_assistant_scope", lambda slug: (False, ("public", "faculty"))
+        )
+        params = {}
+        sql = retrieval._assistant_condition("tai-lieu", params)
+        assert "d.access IN (" in sql
+        assert sorted(v for k, v in params.items() if k.startswith("bot_access")) == [
+            "faculty", "public",
+        ]
+
+    def test_gan_tai_lieu_va_muc_quyen_thi_cong_don(self, monkeypatch):
+        from app.core import retrieval
+
+        retrieval.clear_assistant_scope_cache()
+        monkeypatch.setattr(
+            retrieval, "_assistant_scope", lambda slug: (True, ("public",))
+        )
+        sql = retrieval._assistant_condition("x", {})
+        assert "assistant_documents" in sql and "d.access IN (" in sql
+
+
+class TestChanChunkBangVoDinhDang:
+    """Chunk là bảng số liệu đã vỡ định dạng phải bị loại khỏi CẢ HAI kênh.
+
+    Lọt một kênh cũng đủ hỏng: RRF trộn hai kênh, chunk lọt vẫn vào prompt, và
+    model sẽ đọc "26,38" cạnh "Mã ngành: 7480104" rồi gán điểm chuẩn cho ngành
+    mà nó tưởng — một con số sai trông rất đáng tin.
+    """
+
+    def test_ca_hai_kenh_deu_loc_is_fragment(self):
+        import inspect
+
+        from app.core import retrieval
+
+        for name in ("chunk_search", "vector_search"):
+            src = inspect.getsource(getattr(retrieval, name))
+            assert "ch.is_fragment = 0" in src, f"{name} thiếu lọc is_fragment"
+
+    def test_boi_canh_di_theo_chunk_ve_tang_tren(self):
+        import inspect
+
+        from app.core import retrieval
+
+        # context_text phải nằm trong SELECT, nếu không prompt mất dòng bối
+        # cảnh và model lại không biết trích đoạn thuộc ngành nào.
+        for name in ("chunk_search", "vector_search"):
+            src = inspect.getsource(getattr(retrieval, name))
+            assert "ch.context_text" in src, f"{name} không trả context_text"
+
+
+class TestBacNoiDanTruyVanTuKhoa:
+    def test_du_bon_bac_theo_dung_thu_tu(self):
+        import inspect
+
+        from app.core import retrieval
+
+        src = inspect.getsource(retrieval.chunk_search)
+        assert "ft_phrase_queries(keywords or ())" in src, (
+            "bậc CỤM phải đứng đầu — đây là bậc duy nhất chống được việc "
+            "BOOLEAN MODE xếp hạng không có IDF"
+        )
+        assert '("and", "and_content", "or_content", "or")' in src, (
+            "chunk_search phải nới dần bốn bậc; nhảy thẳng AND -> OR làm câu "
+            "hỏi tự nhiên rơi vào bậc nhiễu nhất"
+        )

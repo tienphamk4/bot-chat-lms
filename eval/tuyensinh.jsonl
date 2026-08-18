@@ -1,0 +1,18 @@
+{"id": "TS01", "message": "ngành An toàn thông tin học những môn gì", "subject": ["an toàn thông tin"], "expect": "answer"}
+{"id": "TS02", "message": "lộ trình ngành Kỹ thuật phần mềm ra sao", "subject": ["kỹ thuật phần mềm"], "expect": "answer"}
+{"id": "TS03", "message": "ngành Khoa học máy tính ra trường làm gì", "subject": ["khoa học máy tính"], "expect": "answer"}
+{"id": "TS04", "message": "ngành Marketing đào tạo những gì", "subject": ["marketing"], "expect": "answer"}
+{"id": "TS05", "message": "ngành Kế toán có những chuyên ngành nào", "subject": ["kế toán"], "expect": "answer"}
+{"id": "TS06", "message": "chương trình Kinh tế số học gì", "subject": ["kinh tế số"], "expect": "answer"}
+{"id": "TS07", "message": "ngành Luật kinh tế ra trường làm gì", "subject": ["luật"], "expect": "answer"}
+{"id": "TS08", "message": "ngành Hệ thống thông tin quản lý là gì", "subject": ["hệ thống thông tin quản lý"], "expect": "answer"}
+{"id": "TS09", "message": "ngành Bảo hiểm đào tạo ra sao", "subject": ["bảo hiểm"], "expect": "answer"}
+{"id": "TS10", "message": "ngành Quản trị kinh doanh học những gì", "subject": ["quản trị kinh doanh"], "expect": "answer"}
+{"id": "TS11", "message": "chương trình Ngôn ngữ Anh của trường thế nào", "subject": ["ngôn ngữ anh"], "expect": "answer"}
+{"id": "TS12", "message": "ngành Toán ứng dụng học gì", "subject": ["toán ứng dụng"], "expect": "answer"}
+{"id": "TS13", "message": "kế hoạch tư vấn tuyển sinh năm 2025 gồm những nội dung gì", "subject": ["tư vấn tuyển sinh"], "expect": "answer"}
+{"id": "TS14", "message": "trường có những chương trình liên kết quốc tế nào", "subject": ["liên kết quốc tế", "ibd"], "expect": "answer"}
+{"id": "TS15", "message": "điểm chuẩn ngành Công nghệ thông tin năm 2025 là bao nhiêu", "subject": [], "expect": "not_found"}
+{"id": "TS16", "message": "học phí ngành Marketing năm 2026 bao nhiêu", "subject": [], "expect": "not_found"}
+{"id": "TS17", "message": "ký túc xá của trường thế nào", "subject": [], "expect": "not_found"}
+{"id": "TS18", "message": "giải giúp em bài tập xác suất trang 20", "subject": [], "expect": "refuse"}

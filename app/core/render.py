@@ -14,6 +14,11 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from app.config import get_settings
+from app.core.access import Identity, access_clause
+from app.core.personas import DEFAULT as DEFAULT_PERSONA
+from app.core.personas import Persona
+from ingest.context import clean_heading
 from app.schemas import Citation, DocType, RouterResult
 
 DOC_TYPE_LABEL: dict[str, str] = {
@@ -23,22 +28,31 @@ DOC_TYPE_LABEL: dict[str, str] = {
     "de_thi": "đề thi",
     "bai_tap": "bài tập",
     "tai_lieu_tham_khao": "tài liệu tham khảo",
-    "quy_che": "quy chế",
+    # Nhãn hiển thị là "văn bản" (rộng hơn: quy chế, quy định, quyết định,
+    # thông báo…). Giá trị trong CSDL vẫn là quy_che — đổi enum là phải
+    # migration và nạp lại, không đáng cho một chuyện chữ nghĩa.
+    "quy_che": "văn bản",
 }
 
-NOT_FOUND = "Mình không tìm thấy thông tin này trong tài liệu hiện có."
+# Bốn câu dưới đây chỉ là ĐƯỜNG LUI khi câu hỏi không kèm slug bot, hoặc bảng
+# `assistants` chưa có/không đọc được. Câu thật của từng bot nằm trong cột
+# `replies` của bảng đó — xem app/core/personas.py.
+#
+# Cố ý KHÔNG liệt kê những việc bot không làm ("còn giải bài tập, tra điểm,
+# học phí…"): danh sách ấy vừa dài vừa gắn chặt với một bot cụ thể, nhân bản
+# sang bot tuyển sinh là sai ngay. Nói ngắn rồi mời đúng việc mình làm — phần
+# mời do cột `offer` của từng bot cấp.
+NOT_FOUND = "Em chưa tìm thấy thông tin này trong tài liệu hiện có ạ."
 
-GREETING = (
-    "Chào bạn 👋 Mình là trợ lý tra cứu tài liệu học tập — giáo trình, slide, "
-    "đề cương, đề thi, bài tập, quy chế đào tạo đều hỏi mình được. "
-    "Bạn đang cần tài liệu môn nào, cứ gõ tự nhiên nhé (ví dụ: \"giáo trình giải tích 1\")."
-)
+GREETING = "Em chào anh/chị."
 
-OUT_OF_SCOPE = (
-    "Chỗ này nằm ngoài phạm vi của mình mất rồi 😅 Mình chỉ giúp được phần "
-    "tra cứu tài liệu học tập và quy chế đào tạo thôi — giải bài tập, viết bài "
-    "hộ hay tra điểm, học phí, thời khóa biểu thì mình không làm được. "
-    "Nếu bạn cần tài liệu của môn nào để tự ôn thì mình tìm giúp ngay!"
+OUT_OF_SCOPE = "Nội dung này nằm ngoài phạm vi hỗ trợ của em ạ."
+
+ABUSIVE = "Em xin lỗi, em không thể tiếp tục cuộc trò chuyện với những ngôn từ như vậy ạ."
+
+CLARIFY = (
+    "Dạ, anh/chị đang muốn hỏi về nội dung cụ thể nào ạ? "
+    "Anh/chị nói rõ hơn giúp em để em hỗ trợ chính xác nhất nhé."
 )
 
 EXCERPT_MAX_CHARS = 280
@@ -55,13 +69,15 @@ def render_documents(
     route: RouterResult,
     course: dict[str, Any] | None = None,
     scope_doc_type: str | None = None,
+    identity: Identity | None = None,
+    persona: Persona | None = None,
 ) -> tuple[str, list[Citation]]:
     """Nhánh metadata: liệt kê tài liệu tìm được."""
     if not rows:
-        return render_not_found(route, course, scope_doc_type), []
+        return render_not_found(route, course, scope_doc_type, identity, persona), []
 
     citations: list[Citation] = []
-    lines: list[str] = [_headline(len(rows), route, course)]
+    lines: list[str] = [_headline(rows)]
 
     for index, row in enumerate(rows, start=1):
         label = DOC_TYPE_LABEL.get(str(row["type"]), str(row["type"]))
@@ -85,7 +101,7 @@ def render_documents(
             )
         )
 
-    lines.append("Bạn bấm vào nguồn bên dưới để tải về nhé.")
+    lines.append("Anh/chị bấm vào nguồn bên dưới để tải về ạ.")
     return "\n".join(lines), citations
 
 
@@ -94,6 +110,8 @@ def render_chunks(
     route: RouterResult,
     course: dict[str, Any] | None = None,
     scope_doc_type: str | None = None,
+    identity: Identity | None = None,
+    persona: Persona | None = None,
 ) -> tuple[str, list[Citation]]:
     """Nhánh nội dung của giai đoạn 1: trích nguyên văn, không diễn giải.
 
@@ -102,10 +120,10 @@ def render_chunks(
     không có rủi ro sai lệch.
     """
     if not chunks:
-        return render_not_found(route, course, scope_doc_type), []
+        return render_not_found(route, course, scope_doc_type, identity, persona), []
 
     citations: list[Citation] = []
-    lines: list[str] = ["Mình tìm được mấy đoạn này trong tài liệu, bạn xem thử nhé:"]
+    lines: list[str] = ["Em tìm được mấy đoạn này trong tài liệu, anh/chị xem thử ạ:"]
 
     for index, chunk in enumerate(chunks, start=1):
         excerpt = _excerpt(str(chunk["content"]))
@@ -121,7 +139,7 @@ def render_chunks(
                 semester=chunk.get("semester"),
                 page=chunk.get("page_from"),
                 page_to=chunk.get("page_to"),
-                heading_path=chunk.get("heading_path"),
+                heading_path=clean_heading(chunk.get("heading_path")),
                 url=download_url(int(chunk["document_id"])),
             )
         )
@@ -133,40 +151,69 @@ def render_not_found(
     route: RouterResult,
     course: dict[str, Any] | None = None,
     scope_doc_type: str | None = None,
+    identity: Identity | None = None,
+    persona: Persona | None = None,
 ) -> str:
-    """Câu trả lời khi rỗng — đúng câu chuẩn của dự án, kèm 2 gợi ý từ khóa.
+    """Câu trả lời khi không tìm được gì — CHỈ nói chuyện của người dùng.
 
-    Trước khi gợi ý "thử từ khóa khác", kiểm xem PHẠM VI đang tìm có tài liệu
-    nào không: kho trống mà vẫn xúi người dùng đổi từ khóa là vô lý — tìm kiểu
-    gì cũng không ra, phải nói thẳng là chưa có tài liệu.
+    Hai nhịp, hết: nhắc lại chủ đề đã hỏi trong phạm vi tài liệu của bot, rồi
+    mời họ đi tiếp bằng đúng việc bot làm được. Kèm đầu mối liên hệ nếu bot có
+    khai.
+
+    Ba thứ CỐ Ý không nói, vì đều là chuyện nội bộ:
+
+    * "kho chưa có tài liệu nào được nạp", "báo giúp quản trị viên bổ sung" —
+      người hỏi không quản trị hệ thống này, nói với họ là đổ việc nhầm người.
+    * tên môn/tài liệu đang có — bản cũ liệt kê từ TOÀN kho nên bot tuyển sinh
+      chìa ra "Kiểm thử phần mềm", và với người ngoài quyền thì còn lộ cả sự
+      tồn tại của tài liệu họ không được đọc.
+    * loại tài liệu đang thiếu — cũng là thông tin vận hành.
+
+    Người dùng chỉ cần biết: em chưa có thông tin này, và em giúp được gì.
     """
-    indexed = _indexed_count(scope_doc_type)
-    if indexed == 0:
-        if scope_doc_type == "quy_che":
-            return (
-                "Kho hiện chưa có văn bản quy chế, quy định nào được nạp nên mình "
-                "chưa tư vấn được. Bạn báo quản trị viên bổ sung, rồi quay lại hỏi nhé!"
-            )
-        if scope_doc_type:
-            label = DOC_TYPE_LABEL.get(scope_doc_type, "tài liệu")
-            return f"Kho hiện chưa có {label} nào được nạp. Bạn báo quản trị viên bổ sung nhé!"
-        return (
-            "Kho tài liệu hiện đang trống — quản trị viên chưa nạp tài liệu nào, "
-            "nên mình chưa có gì để tra cứu giúp bạn. Bạn quay lại sau nhé!"
-        )
-
-    suggestions = _suggestions(route, course)
-    if not suggestions:
-        return f"{NOT_FOUND} Bạn thử diễn đạt lại, hoặc hỏi mình xem môn đó có những tài liệu gì nhé."
-    return (
-        f"{NOT_FOUND} Bạn thử tìm lại với từ khóa {' hoặc '.join(suggestions)} xem sao nhé."
+    persona = persona or DEFAULT_PERSONA
+    topic = _topic_phrase(route.standalone_question)
+    opening = (
+        f"Về vấn đề “{topic}”, em chưa có thông tin trong {persona.corpus_label} ạ."
+        if topic
+        else f"Em chưa tìm thấy thông tin này trong {persona.corpus_label} ạ."
     )
+    return _with_contact(f"{opening} {persona.offer}".strip(), persona)
 
 
-# Đếm tài liệu indexed theo phạm vi, cache 60 giây trong tiến trình — chỉ để
-# quyết định thông điệp không-tìm-thấy, trễ một phút không sao.
-_INDEXED_COUNT_TTL = 60.0
-_indexed_cache: dict[str, tuple[float, int]] = {}
+# Đuôi nghi vấn cần lột để lấy CHỦ ĐỀ người ta hỏi: "kiểm thử là gì" -> "kiểm thử".
+_TRAILING_QUESTION = re.compile(
+    r"\s*(la gi|nghia la gi|nhu the nao|the nao|ra sao|la sao|ra lam sao)"
+    r"\s*[?.!]*\s*$",
+    re.IGNORECASE,
+)
+_LEADING_FILLER = re.compile(
+    r"^\s*(cho em hoi|cho minh hoi|em muon hoi|minh muon hoi|em hoi|ban oi)\s*[,:]?\s*",
+    re.IGNORECASE,
+)
+
+
+def _topic_phrase(question: str) -> str:
+    """Rút chủ đề từ câu hỏi để nhắc lại — cắt trên bản CÒN DẤU, dò trên bản
+    chuẩn hóa. Cắt hụt thì trả rỗng, câu trả lời rơi về mẫu chung."""
+    from app.vn import vn_norm
+
+    text = (question or "").strip()
+    if not text:
+        return ""
+
+    for pattern in (_LEADING_FILLER, _TRAILING_QUESTION):
+        match = pattern.search(vn_norm(text))
+        if match:
+            if pattern is _LEADING_FILLER:
+                text = text[match.end():].strip()
+            else:
+                text = text[: match.start()].strip()
+
+    text = text.strip(" ,.?!:;“”\"'")
+    if not text or len(text) > 80:
+        return ""
+    return text
 
 
 def _indexed_count(scope_doc_type: str | None) -> int:
@@ -198,17 +245,31 @@ def _indexed_count(scope_doc_type: str | None) -> int:
     return count
 
 
-def _headline(
-    count: int, route: RouterResult, course: dict[str, Any] | None
-) -> str:
-    what = DOC_TYPE_LABEL.get(route.doc_type.value, "tài liệu") if route.doc_type else "tài liệu"
+def _headline(rows: list[dict[str, Any]]) -> str:
+    """Mô tả thứ THẬT SỰ tìm được, không phải thứ người dùng hỏi.
+
+    Ở nhánh metadata hai cái đó trùng nhau vì kết quả đã lọc đúng tiêu chí.
+    Nhưng nhánh dự phòng FULLTEXT tìm theo tiêu đề, KHÔNG lọc loại và môn —
+    dựng câu theo câu hỏi ở đó là nói sai: đã gặp ca "Em tìm thấy 1 đề thi của
+    môn Xác suất thống kê" trong khi thứ chìa ra là slide của môn Kiểm thử
+    phần mềm, ngay dưới một dòng vừa nói là không tìm thấy đề thi.
+    """
+    types = {str(row["type"]) for row in rows}
+    what = (
+        DOC_TYPE_LABEL.get(next(iter(types)), "tài liệu")
+        if len(types) == 1
+        else "tài liệu"
+    )
+
+    # Chỉ nói "của môn X" khi MỌI kết quả cùng thuộc đúng môn đó.
     where = ""
-    # CHỈ nói "của môn X" khi X là môn THẬT đã khớp danh mục. course_hint chưa
-    # khớp mà vẫn gắn vào là khẳng định sai sự thật ("giáo trình của môn hệ
-    # quản trị CSDL" nhưng chìa ra Giải tích 1).
-    if course:
-        where = f" của môn {course['name']} ({course['code']})"
-    return f"Mình tìm thấy {count} {what}{where}:"
+    course_ids = {row.get("course_id") for row in rows}
+    if len(course_ids) == 1 and next(iter(course_ids)) is not None:
+        first = rows[0]
+        if first.get("course_name") and first.get("course_code"):
+            where = f" của môn {first['course_name']} ({first['course_code']})"
+
+    return f"Em tìm thấy {len(rows)} {what}{where}:"
 
 
 def _semester_label(semester: str) -> str:
@@ -230,20 +291,34 @@ def _excerpt(content: str) -> str:
     return cut + "…"
 
 
-def _suggestions(route: RouterResult, course: dict[str, Any] | None) -> list[str]:
-    candidates: list[str] = []
-    if course:
-        candidates.append(str(course["code"]))
-        candidates.append(str(course["name"]))
-    elif route.course_hint:
-        candidates.append(route.course_hint)
-    if route.doc_type:
-        candidates.append(DOC_TYPE_LABEL.get(route.doc_type.value, route.doc_type.value))
-    candidates.extend(route.keywords)
+def _with_contact(answer: str, persona: Persona | None = None) -> str:
+    """Nối đường liên hệ vào câu không-tìm-thấy.
 
-    unique: list[str] = []
-    for candidate in candidates:
-        cleaned = (candidate or "").strip()
-        if cleaned and cleaned not in unique:
-            unique.append(f'"{cleaned}"')
-    return unique[:2]
+    Ưu tiên đầu mối RIÊNG của bot (bảng assistants), rồi mới tới .env dùng
+    chung: bot tuyển sinh phải chỉ về Phòng Tuyển sinh chứ không phải về quản
+    trị kho tài liệu. Không khai gì thì trả nguyên câu — thà không có lối liên
+    hệ còn hơn chìa ra một số điện thoại bịa.
+    """
+    settings = get_settings()
+    contact = (persona.contact if persona else None) or {}
+    hotline = (contact.get("hotline") or settings.contact_hotline).strip()
+    website = (contact.get("website") or settings.contact_website).strip()
+    if not hotline and not website:
+        return answer
+
+    ways = []
+    if hotline:
+        ways.append(f"hotline {hotline}")
+    if website:
+        ways.append(f"website {website}")
+    return (
+        f"{answer}\n\nĐể được hỗ trợ chính xác nhất, anh/chị vui lòng liên hệ "
+        f"{' hoặc '.join(ways)} ạ."
+    )
+
+
+# `_suggestions()` cũ đã bị XÓA, đừng dựng lại: nó lấy mã và tên môn từ chỉ mục
+# trong RAM — không đi qua mệnh đề quyền — nên gợi ý được cả môn mà người hỏi
+# không có quyền xem tài liệu. Bản thay thế `_accessible_topics()` cũng đã bỏ
+# nốt: dù có lọc quyền, nó vẫn liệt kê môn từ TOÀN kho nên bot tuyển sinh chìa
+# ra tên môn của bot tài liệu. Câu không-tìm-thấy giờ không gợi ý gì cả.

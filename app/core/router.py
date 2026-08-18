@@ -14,7 +14,7 @@ import logging
 
 from app.core import router_rules
 from app.llm import vertex
-from app.llm.prompts import ROUTER_EXAMPLES, ROUTER_SYSTEM, router_prompt
+from app.llm.prompts import router_prompt, router_system
 from app.schemas import DocType, Intent, RouterResult
 
 log = logging.getLogger(__name__)
@@ -65,18 +65,16 @@ ROUTER_SCHEMA: dict = {
     ],
 }
 
-_SYSTEM = f"{ROUTER_SYSTEM}\n\n{ROUTER_EXAMPLES}"
-
-
 def resolve(
     message: str,
     allow_llm: bool = True,
     verdict: router_rules.RuleVerdict | None = None,
+    blocked_topics: tuple[str, ...] = (),
 ) -> RouterResult:
     """`verdict` truyền sẵn khi nơi gọi đã chạy tầng luật (để quyết việc khác,
     ví dụ có nên embed song song không) — tránh chạy luật hai lần."""
     if verdict is None:
-        verdict = router_rules.route(message)
+        verdict = router_rules.route(message, blocked_topics)
     if verdict.confident or not allow_llm:
         log.info(
             "Router [rule] intent=%s course=%s type=%s (LLM không cần gọi%s)",
@@ -88,7 +86,7 @@ def resolve(
         return verdict.result
 
     response = vertex.generate_json(
-        system_instruction=_SYSTEM,
+        system_instruction=router_system(blocked_topics),
         prompt=router_prompt(message),
         response_schema=ROUTER_SCHEMA,
         max_output_tokens=ROUTER_MAX_OUTPUT_TOKENS,
@@ -100,6 +98,34 @@ def resolve(
         return verdict.result
 
     merged = _merge(verdict.result, response)
+
+    # Tầng luật đã thấy dấu hiệu hỏi nội dung TƯỜNG MINH thì model không được
+    # lật ngược thành câu đi tìm file.
+    #
+    # Ca thật: "lộ trình ngành An toàn thông tin của trường là gì" — luật phán
+    # đúng ask_content nhờ chữ "là gì", nhưng model đổi thành lookup_doc và tự
+    # đoán thêm loại "đề cương". Hệ quả: tìm đề cương → không có → nhánh dự
+    # phòng khớp tiêu đề → trả về "Em không tìm thấy đề cương như anh/chị cần"
+    # kèm một danh sách file, trong khi tài liệu có đủ nội dung để trả lời.
+    #
+    # Luật ở đây chỉ nhận cụm rõ ràng nên gần như không dương tính giả; còn
+    # model thì đang SUY DIỄN. Suy diễn không được thắng bằng chứng.
+    if (
+        verdict.result.intent is Intent.ask_content
+        and merged.intent is not Intent.ask_content
+    ):
+        log.info(
+            "Router: giữ ask_content của tầng luật, bỏ qua %s do model đề xuất",
+            merged.intent.value,
+        )
+        merged.intent = Intent.ask_content
+        # Bỏ luôn loại tài liệu model đoán kèm, TRỪ KHI tầng luật cũng thấy.
+        # Model vừa đọc sai kiểu câu hỏi thì phán đoán khác của nó trên cùng
+        # câu đó cũng không đáng tin — mà loại tài liệu bịa ra thì siết truy
+        # hồi vào đúng chỗ không có gì ("đề cương" trong kho chưa có đề cương).
+        if merged.doc_type is not None and verdict.result.doc_type is None:
+            log.info("Router: bỏ doc_type=%s model đoán kèm", merged.doc_type.value)
+            merged.doc_type = None
     log.info(
         "Router [llm] model=%s intent=%s course=%s tokens=%d/%d — GEMINI ĐÃ ĐƯỢC GỌI",
         response.model,

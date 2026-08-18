@@ -1,10 +1,11 @@
-// Lõi chat dùng chung cho các trang (LMS, tư vấn...). Mỗi trang gọi:
-//   initChat({ getHeaders: () => ({...}), getContext: () => (null | {screen, course_code}) })
-// Trang tự quyết định ngữ cảnh + danh tính — lõi chỉ lo hợp đồng SSE và render.
+// Lõi chat dùng chung. Mỗi popup gọi một lần:
+//   initChat({ root: '#bot-tai-lieu', getHeaders: ..., getContext: ..., welcome: ... })
+//
+// MỌI thứ đều bám vào `root` chứ không vào id toàn cục: một trang có thể mở
+// nhiều bot cạnh nhau, mỗi bot một session_id, một khung log, một ô nhập riêng.
+// Dùng id toàn cục ở đây là hai bot ghi đè lên nhau ngay lượt gõ đầu tiên.
 
 /* eslint-disable no-unused-vars */
-
-const log = document.getElementById('log');
 
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, ch => ({
@@ -13,7 +14,7 @@ function esc(s) {
 }
 const escapeHtml = esc;
 
-function add(cls, text) {
+function add(log, cls, text) {
   const el = document.createElement('div');
   el.className = 'msg ' + cls;
   el.textContent = text;
@@ -35,11 +36,9 @@ function citeTooltip(c) {
 // --- Popup xem trước trích dẫn ----------------------------------------------
 // PDF: nhúng iframe + nhảy đúng trang (#page=N của trình xem PDF Chromium),
 // kèm khối "đoạn được trích" nguyên văn để thấy đúng chỗ. Khác PDF: chỉ snippet.
-let _previewHeaders = () => ({});
-
-function openPreview(c) {
+function openPreview(c, getHeaders) {
   closePreview();
-  const uid = _previewHeaders()['X-User-Id'] || '';
+  const uid = (getHeaders ? getHeaders() : {})['X-User-Id'] || '';
   const page = c.page || 1;
 
   const bk = document.createElement('div');
@@ -106,15 +105,15 @@ function closePreview() {
 function _pvEsc(e) { if (e.key === 'Escape') closePreview(); }
 
 // Gắn citation vào phần tử: click thường mở popup, ctrl/giữa vẫn mở tab mới.
-function bindPreview(el, c) {
+function bindPreview(el, c, getHeaders) {
   el.addEventListener('click', e => {
     if (e.ctrlKey || e.metaKey || e.button === 1) return;
     e.preventDefault();
-    openPreview(c);
+    openPreview(c, getHeaders);
   });
 }
 
-function addCitations(citations) {
+function addCitations(log, citations, getHeaders) {
   if (!citations || !citations.length) return;
   const wrap = document.createElement('div');
   wrap.className = 'cites';
@@ -138,12 +137,12 @@ function addCitations(citations) {
     a.innerHTML = `<span class="doc-ico">📄</span>`
       + `<span class="doc-title">${esc(first.title)}</span>`
       + `<small>${pages}</small>`;
-    bindPreview(a, first);
+    bindPreview(a, first, getHeaders);
     // Bấm đúng nhãn trang nào thì popup mở đúng đoạn trích đó
     for (const b of a.querySelectorAll('b[data-n]')) {
       const c = group.find(x => x.n === Number(b.dataset.n));
       if (c) b.addEventListener('click', e => {
-        e.preventDefault(); e.stopPropagation(); openPreview(c);
+        e.preventDefault(); e.stopPropagation(); openPreview(c, getHeaders);
       });
     }
     wrap.appendChild(a);
@@ -153,11 +152,10 @@ function addCitations(citations) {
 }
 
 // Màn hình trống: lời chào + các gợi ý bấm-là-gửi. Tự biến mất khi có tin đầu.
-function showWelcome(welcome) {
+function showWelcome(log, welcome, form, input) {
   if (!welcome) return;
   const el = document.createElement('div');
   el.className = 'welcome';
-  el.id = 'welcome';
   const chips = (welcome.chips || []).map(q =>
     `<button type="button" class="chip">${esc(q)}</button>`
   ).join('');
@@ -168,19 +166,17 @@ function showWelcome(welcome) {
   log.appendChild(el);
   el.querySelectorAll('.chip').forEach(btn => {
     btn.addEventListener('click', () => {
-      const input = document.getElementById('input');
       input.value = btn.textContent;
-      document.getElementById('form').requestSubmit();
+      form.requestSubmit();
     });
   });
 }
 
-function clearWelcome() {
-  const el = document.getElementById('welcome');
-  if (el) el.remove();
+function clearWelcome(log) {
+  log.querySelector('.welcome')?.remove();
 }
 
-function addTrace(steps) {
+function addTrace(log, steps) {
   const wrap = document.createElement('div');
   wrap.className = 'msg tracewrap';
 
@@ -209,7 +205,7 @@ function addTrace(steps) {
 }
 
 // Dựng câu trả lời cuối: đoạn văn + gạch đầu dòng, [n] (kể cả [1, 6]) → pill trang.
-function renderAnswer(el, text, citations) {
+function renderAnswer(el, text, citations, getHeaders) {
   if (!text) return;
   const byN = {};
   for (const c of citations || []) byN[c.n] = c;
@@ -246,7 +242,7 @@ function renderAnswer(el, text, citations) {
   // Pill [n] trong câu: click thường mở popup xem trước đúng đoạn trích
   for (const a of el.querySelectorAll('a.mark[data-n]')) {
     const c = byN[Number(a.dataset.n)];
-    if (c) bindPreview(a, c);
+    if (c) bindPreview(a, c, getHeaders);
   }
 }
 
@@ -290,27 +286,33 @@ function newSessionId() {
 }
 
 function initChat(config) {
-  const form = document.getElementById('form');
-  const input = document.getElementById('input');
-  const send = document.getElementById('send');
-  const sessionId = newSessionId();
-  _previewHeaders = config.getHeaders;  // popup cần user id cho iframe preview
+  const root = typeof config.root === 'string'
+    ? document.querySelector(config.root)
+    : config.root;
+  if (!root) return;
 
-  showWelcome(config.welcome);
+  const log = root.querySelector('.log');
+  const form = root.querySelector('.form');
+  const input = root.querySelector('.input');
+  const send = root.querySelector('.send');
+  const sessionId = newSessionId();
+  const getHeaders = config.getHeaders;
+
+  showWelcome(log, config.welcome, form, input);
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const message = input.value.trim();
     if (!message) return;
 
-    clearWelcome();
-    add('user', message);
+    clearWelcome(log);
+    add(log, 'user', message);
     input.value = '';
     send.disabled = true;
 
-    const headers = { 'Content-Type': 'application/json', ...config.getHeaders() };
+    const headers = { 'Content-Type': 'application/json', ...getHeaders() };
 
-    const bot = add('bot typing', '');
+    const bot = add(log, 'bot typing', '');
     bot.innerHTML = '<span></span><span></span><span></span>';
 
     let metaEl = null;
@@ -365,7 +367,7 @@ function initChat(config) {
             citations = ev.data.citations;
           } else if (ev.event === 'done') {
             if (metaEl) metaEl.textContent += ` · ${ev.data.latency_ms} ms`;
-            if (ev.data.trace && ev.data.trace.length) addTrace(ev.data.trace);
+            if (ev.data.trace && ev.data.trace.length) addTrace(log, ev.data.trace);
           } else if (ev.event === 'error') {
             answerText = 'Lỗi: ' + ev.data.message;
             showText();
@@ -376,12 +378,10 @@ function initChat(config) {
       answerText = answerText || 'Không kết nối được máy chủ.';
     } finally {
       showText();
-      renderAnswer(bot, answerText, citations);
-      addCitations(citations);
+      renderAnswer(bot, answerText, citations, getHeaders);
+      addCitations(log, citations, getHeaders);
       send.disabled = false;
       input.focus();
     }
   });
-
-  input.focus();
 }

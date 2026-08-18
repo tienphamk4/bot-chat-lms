@@ -1,4 +1,11 @@
-# Kịch bản demo — EDU-DOCBOT giai đoạn 1
+# Kịch bản demo — EDU-DOCBOT
+
+> **Cảnh báo (18/08/2026): tài liệu này mô tả giao diện CŨ — một trang chat duy
+> nhất cho một trợ lý.** Hệ thống hiện là nền tảng nhiều trợ lý: chat nằm trong
+> bong bóng nổi ở góc phải, mỗi trợ lý một popup, và quản trị gom về một trang
+> có sidebar. Các kịch bản hỏi–đáp bên dưới vẫn đúng về nội dung, nhưng đường đi
+> thao tác thì không. Xem [huong-dan-su-dung.md](huong-dan-su-dung.md) để biết
+> luồng hiện tại.
 
 > Điều kiện: server chạy (`readyz` ok), đã bấm "Nạp tài liệu" (3 file mẫu indexed).
 > Mở `http://localhost:8080/`. Mỗi kịch bản ghi rõ: chọn user nào, gõ gì, kỳ vọng gì.

@@ -15,9 +15,11 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.config import get_settings
-from app.core import cache, quota, retrieval
+from app.core import cache, personas, quota, retrieval
 from app.core.access import Identity
 from app.core.render import (
+    ABUSIVE,
+    CLARIFY,
     GREETING,
     OUT_OF_SCOPE,
     render_chunks,
@@ -104,9 +106,17 @@ def handle(
     settings = get_settings()
     trace = _Trace()
 
+    # Bot nào đang trả lời — quyết định câu chữ, phạm vi tài liệu và đầu mối
+    # liên hệ. Đọc từ bảng `assistants`, hỏng thì rơi về persona mặc định.
+    persona = personas.get(context.assistant if context is not None else None)
+
     context_key = ""
     if context is not None and (context.screen or context.course_code):
         context_key = f"{context.screen or ''}|{vn_norm(context.course_code or '')}"
+    # Hai bot khác nhau KHÔNG dùng chung ô cache: cùng một câu hỏi, câu trả lời
+    # và cả cách từ chối đều khác nhau theo persona.
+    if persona.slug:
+        context_key = f"{persona.slug}#{context_key}"
 
     # --- Tầng 0: cache hash (song song với guard quota — hai lượt DB độc lập,
     # từ máy xa Cloud SQL mỗi lượt tuần tự là ~1s) -----------------------------
@@ -137,14 +147,17 @@ def handle(
     from app.core import router_rules
     from app.llm import embeddings
 
-    verdict = router_rules.route(message)
+    verdict = router_rules.route(message, persona.blocked_topics)
     embed_future = None
     if quota_status.allow_llm and (
         not verdict.confident or verdict.result.intent is Intent.ask_content
     ):
         embed_future = _bg_pool.submit(embeddings.embed_query, message)
 
-    route = resolve(message, allow_llm=quota_status.allow_llm, verdict=verdict)
+    route = resolve(
+        message, allow_llm=quota_status.allow_llm, verdict=verdict,
+        blocked_topics=persona.blocked_topics,
+    )
     if route.llm_failed:
         # Đừng đổ oan cho tầng luật: thời gian ở đây là cú gọi LLM bị nghẽn
         # quota/timeout rồi mới rơi về luật.
@@ -160,7 +173,9 @@ def handle(
     # Trang bài học môn X: câu hỏi không nêu môn → lấy môn của trang đang mở.
     # Trang tư vấn: thiên về văn bản quy chế. Chỉ ĐIỀN CHỖ TRỐNG — người dùng
     # nêu môn/loại tường minh trong câu hỏi thì lời họ nói thắng.
-    scope_doc_type = None
+    # Khoanh vùng loại tài liệu theo persona (cột doc_types). Bot chỉ đọc quy
+    # chế thì khai ["quy_che"] trong CSDL, không cần nhánh if nào ở đây.
+    scope_doc_type = persona.doc_types[0] if persona.doc_types else None
     if context is not None:
         if (
             context.course_code
@@ -201,20 +216,25 @@ def handle(
 
     # --- Nhánh theo intent ---------------------------------------------------
     if route.intent is Intent.greeting:
-        outcome.answer = GREETING
+        outcome.answer = persona.reply("greeting", GREETING)
+    elif route.intent is Intent.abusive:
+        outcome.answer = persona.reply("abusive", ABUSIVE)
+    elif route.intent is Intent.clarify:
+        outcome.answer = persona.reply("clarify", CLARIFY)
     elif route.intent is Intent.out_of_scope:
-        outcome.answer = OUT_OF_SCOPE
+        outcome.answer = persona.reply("out_of_scope", OUT_OF_SCOPE)
     elif route.intent is Intent.ask_content:
         _run_content(
             outcome, identity, settings.content_limit, quota_status.allow_llm,
             sink=sink, trace=trace, embed_future=embed_future,
-            scope_doc_type=scope_doc_type,
+            scope_doc_type=scope_doc_type, persona=persona,
         )
     else:
         _run_lookup(
             outcome, identity, settings.metadata_limit, settings.content_limit,
             quota_status.allow_llm, sink=sink, trace=trace,
             embed_future=embed_future, scope_doc_type=scope_doc_type,
+            persona=persona,
         )
 
     outcome.cost_usd = settings.cost_usd(
@@ -233,36 +253,68 @@ def _run_lookup(
     trace: _Trace | None = None,
     embed_future=None,
     scope_doc_type: str | None = None,
+    persona=None,
 ) -> None:
     """Nhánh A, với hai bậc dự phòng đúng thiết kế:
     metadata → FULLTEXT tiêu đề → nhánh nội dung (GĐ2: RAG)."""
     route = outcome.route
     course = retrieval.resolve_course(route)
 
-    rows = retrieval.metadata_search(identity, route, course, limit=limit)
+    rows = retrieval.metadata_search(
+        identity, route, course, limit=limit,
+        assistant_slug=(persona.slug or None) if persona else None,
+    )
     if trace:
         trace.mark("SQL metadata (DB)")
     if rows:
         outcome.branch = "metadata"
-        outcome.answer, outcome.citations = render_documents(rows, route, course)
+        outcome.answer, outcome.citations = render_documents(rows, route, course, identity=identity, persona=persona)
         # Người dùng nêu một môn/chủ đề KHÔNG có trong danh mục ("quy chế môn
         # lập trình di động") → danh sách trả về chỉ khớp LOẠI, không khớp chủ
         # đề — phải nói thật thay vì tỏ ra "tìm thấy".
         if route.course_hint and course is None:
             outcome.answer = (
-                f"Mình chưa thấy tài liệu nào riêng cho \"{route.course_hint}\" — "
-                f"dưới đây là những gì gần nhất hiện có:\n" + outcome.answer
+                f"Em chưa thấy tài liệu nào riêng cho \"{route.course_hint}\" — "
+                f"dưới đây là những gì gần nhất hiện có ạ:\n" + outcome.answer
             )
         _store_cache(outcome, rows, identity)
         return
 
     question = route.standalone_question
-    rows = retrieval.title_search(identity, question, limit=limit)
+
+    # Nhánh dự phòng khớp TIÊU ĐỀ vốn để cứu câu tra cứu diễn đạt lạ. Nhưng khi
+    # câu hỏi thực chất là HỎI NỘI DUNG, một cú trùng chữ trong tiêu đề lại giả
+    # vờ thành công và chặn mất bước quan trọng nhất — người hỏi nhận về danh
+    # sách file trong khi tài liệu có đủ nội dung để trả lời.
+    #
+    # Ca thật: "lộ trình ngành An toàn thông tin của trường là gì" → kho không
+    # có đề cương nào, nhưng tiêu đề "GT Ngành và CTĐT" trùng chữ nên thang
+    # dừng lại ở đây và RAG không bao giờ chạy.
+    #
+    # Đây là lớp chặn theo CƠ CHẾ, khác với việc bổ sung từng lối nói vào bộ
+    # nhận dạng: lối nói mới sẽ còn xuất hiện, nhưng đã là câu hỏi nội dung thì
+    # không bao giờ được kết thúc bằng một danh sách file.
+    from app.core.router_rules import looks_like_content_question
+
+    if looks_like_content_question(question):
+        if trace:
+            trace.mark("câu hỏi nội dung — bỏ qua khớp tiêu đề")
+        _run_content(
+            outcome, identity, content_limit, allow_llm, course,
+            sink=sink, trace=trace, embed_future=embed_future,
+            scope_doc_type=scope_doc_type, persona=persona,
+        )
+        return
+
+    rows = retrieval.title_search(
+        identity, question, limit=limit,
+        assistant_slug=(persona.slug or None) if persona else None,
+    )
     if trace:
         trace.mark("FULLTEXT tiêu đề (DB)")
     if rows:
         outcome.branch = "fulltext"
-        outcome.answer, outcome.citations = render_documents(rows, route, course)
+        outcome.answer, outcome.citations = render_documents(rows, route, course, identity=identity, persona=persona)
         # Fallback trả về loại KHÁC loại người dùng hỏi ("slide GT1" nhưng chỉ
         # có giáo trình) → phải nói thật là không có đúng thứ họ cần.
         if route.doc_type and not any(
@@ -272,8 +324,8 @@ def _run_lookup(
 
             label = DOC_TYPE_LABEL.get(route.doc_type.value, "loại tài liệu này")
             outcome.answer = (
-                f"Mình không tìm thấy {label} như bạn cần — "
-                f"nhưng có tài liệu liên quan, bạn xem tạm nhé:\n" + outcome.answer
+                f"Em không tìm thấy {label} như anh/chị cần — "
+                f"nhưng có tài liệu liên quan, anh/chị xem tạm ạ:\n" + outcome.answer
             )
         _store_cache(outcome, rows, identity)
         return
@@ -281,7 +333,7 @@ def _run_lookup(
     _run_content(
         outcome, identity, content_limit, allow_llm, course,
         sink=sink, trace=trace, embed_future=embed_future,
-        scope_doc_type=scope_doc_type,
+        scope_doc_type=scope_doc_type, persona=persona,
     )
 
 
@@ -295,6 +347,7 @@ def _run_content(
     trace: _Trace | None = None,
     embed_future=None,
     scope_doc_type: str | None = None,
+    persona=None,
 ) -> None:
     """Nhánh B. GĐ2: RAG đầy đủ (hybrid → rerank → sinh có trích dẫn).
 
@@ -326,6 +379,8 @@ def _run_content(
         result = rag.answer(
             identity, route, course, keep=limit, emit=emit, trace=trace,
             embed_future=embed_future, scope_doc_type=scope_doc_type,
+            assistant_slug=(persona.slug or None) if persona else None,
+            persona=persona,
         )
         if result is not None:
             outcome.gen_tokens_in = result.tokens_in
@@ -334,7 +389,7 @@ def _run_content(
             outcome.gen_model = result.model or None
             if result.not_found:
                 outcome.branch = "rag"
-                outcome.answer = render_not_found(route, course, scope_doc_type)
+                outcome.answer = render_not_found(route, course, scope_doc_type, identity, persona)
                 return
             outcome.branch = "rag"
             outcome.answer = result.answer
@@ -351,12 +406,13 @@ def _run_content(
     chunks = retrieval.chunk_search(
         identity, route.standalone_question, route.keywords, course, limit=limit,
         scope_doc_type=scope_doc_type,
+        assistant_slug=(persona.slug or None) if persona else None,
     )
     if trace:
         trace.mark("FULLTEXT chunk (DB)")
     outcome.branch = "content"
     outcome.answer, outcome.citations = render_chunks(
-        chunks, route, course, scope_doc_type
+        chunks, route, course, scope_doc_type, identity, persona
     )
     if chunks:
         _store_cache(outcome, chunks, identity, from_chunks=True)

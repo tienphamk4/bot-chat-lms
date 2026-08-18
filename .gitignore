@@ -17,3 +17,6 @@ files/
 
 # pytest
 .pytest_cache/
+
+# Tài liệu nguồn để nạp — dữ liệu, không phải mã
+pdf/

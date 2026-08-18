@@ -54,7 +54,14 @@ def embed_pending(batch_size: int = 100) -> dict:
         if not rows:
             break
 
-        batch = embeddings.embed_texts([r["content"] for r in rows])
+        # Embed văn bản ĐÃ kèm bối cảnh, đúng thứ đã đưa vào FULLTEXT. Vector
+        # của một danh sách môn học trần trụi không mang chủ đề nào, nên kênh
+        # vector cũng trượt y như kênh từ khóa nếu bỏ bước này.
+        from ingest.context import indexed_text
+
+        batch = embeddings.embed_texts(
+            [indexed_text(r.get("context_text"), r["content"]) for r in rows]
+        )
         if batch is None:
             # Không phân biệt được "tắt" với "hỏng tạm" ở đây — cả hai đều
             # dừng vòng lặp, lần scan sau thử lại.
@@ -94,12 +101,20 @@ def embed_pending(batch_size: int = 100) -> dict:
     return result
 
 
+def _course_name(course_id: int | None) -> str | None:
+    """Tên môn học của tài liệu — một mảnh bối cảnh miễn phí."""
+    if not course_id:
+        return None
+    row = fetch_one("SELECT name FROM courses WHERE id = :id", {"id": course_id})
+    return (row or {}).get("name")
+
+
 def fetch_all_pending(batch_size: int):
     from app.db import fetch_all
 
     return fetch_all(
         """
-        SELECT ch.id, ch.content
+        SELECT ch.id, ch.content, ch.context_text
         FROM document_chunks ch
         JOIN documents d ON d.id = ch.document_id
         WHERE ch.embedding IS NULL AND d.status = 'indexed'
@@ -296,6 +311,27 @@ def ingest_file(
             page_count=extraction.page_count, stale_id=stale,
         )
 
+    # BỐI CẢNH cho từng chunk — chạy TRƯỚC khi ghi, vì content_norm (FULLTEXT)
+    # phải chứa nó. Tầng cấu trúc miễn phí luôn chạy; tầng model chỉ chạy khi
+    # bật, và hỏng thì rơi êm chứ không chặn việc nạp.
+    from ingest import context as chunk_context
+
+    course_name = _course_name(course_id)
+    chunk_dicts = [
+        {
+            "content": piece.content,
+            "heading_path": piece.heading_path,
+            "page_from": piece.page_from,
+        }
+        for piece in chunks
+    ]
+    contexts = chunk_context.build(
+        chunk_dicts,
+        doc_title=doc_meta.title,
+        course_name=course_name,
+        use_llm=get_settings().chunk_context_llm,
+    )
+
     with connection() as conn:
         if stale:
             conn.execute(
@@ -342,9 +378,11 @@ def ingest_file(
                 """
                 INSERT INTO document_chunks
                     (document_id, chunk_index, content, content_norm,
+                     context_text, is_fragment,
                      heading_path, page_from, page_to, token_count)
                 VALUES
                     (:document_id, :chunk_index, :content, :content_norm,
+                     :context_text, :is_fragment,
                      :heading_path, :page_from, :page_to, :token_count)
                 """
             ),
@@ -353,13 +391,20 @@ def ingest_file(
                     "document_id": document_id,
                     "chunk_index": piece.index,
                     "content": piece.content,
-                    "content_norm": vn_norm(piece.content),
+                    # FULLTEXT khớp trên văn bản ĐÃ kèm bối cảnh — đó là điểm
+                    # mấu chốt: chunk "HỌC PHẦN CHUNG: Lập trình Python…" giờ
+                    # khớp được câu hỏi có chữ "An toàn thông tin".
+                    "content_norm": vn_norm(
+                        chunk_context.indexed_text(ctx, piece.content)
+                    ),
+                    "context_text": ctx or None,
+                    "is_fragment": int(chunk_context.is_fragmented(piece.content)),
                     "heading_path": piece.heading_path,
                     "page_from": piece.page_from,
                     "page_to": piece.page_to,
                     "token_count": piece.token_count,
                 }
-                for piece in chunks
+                for piece, ctx in zip(chunks, contexts)
             ],
         )
 

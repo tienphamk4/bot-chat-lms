@@ -40,7 +40,12 @@ class LLMResult:
 
 
 # Trần thời gian cho lời gọi sinh (dài hơn router vì stream 400 token).
-GEN_TIMEOUT_SECONDS = 25.0
+#
+# Hạ 25 → 12 sau sự cố 14/08: một lượt RAG mất 34,4s trong khi lượt kế tiếp với
+# đầu vào tương đương chỉ mất 1,9s. Đo trên VM: token đầu của cả 3.5-flash-lite
+# lẫn 2.5-flash-lite là 0,4-0,65s. Trần 25s không bảo vệ được ai — nó chỉ cho
+# phép một lần thử treo ngốn 25 giây trước khi có ai đó nhận ra.
+GEN_TIMEOUT_SECONDS = 12.0
 
 
 def _http_options(timeout_seconds: float, attempts: int = 2):
@@ -190,6 +195,7 @@ def generate_text_stream(
     prompt: str,
     model: str | None = None,
     max_output_tokens: int = 400,
+    thinking_budget: int = 0,
     temperature: float = 0.2,
 ):
     """Bản streaming của generate_text — nguồn token thật cho SSE (GĐ2).
@@ -230,8 +236,16 @@ def generate_text_stream(
                     system_instruction=system_instruction,
                     temperature=temperature,
                     max_output_tokens=max_output_tokens,
-                    thinking_config=types.ThinkingConfig(thinking_budget=0),  # KT-04
-                    http_options=_http_options(GEN_TIMEOUT_SECONDS),
+                    # KT-04. Mặc định 0; trang cấu hình mở được theo từng bot.
+                    thinking_config=types.ThinkingConfig(
+                        thinking_budget=thinking_budget
+                    ),
+                    # attempts=1: KHÔNG để SDK tự thử lại. Cú thử lại bên trong
+                    # SDK không nổi lên tầng này nên không có lấy một dòng log —
+                    # sự cố 14/08 là 32,6s im lặng, journal sạch trơn, phải đi
+                    # đọc mã mới tìm ra. Để vòng `lineup` bên dưới lo chuyển làn:
+                    # chậm hơn vài trăm ms nhưng mỗi lần chuyển đều có log.
+                    http_options=_http_options(GEN_TIMEOUT_SECONDS, attempts=1),
                 ),
             )
             for chunk in stream:
@@ -283,6 +297,7 @@ def generate_text(
     prompt: str,
     model: str | None = None,
     max_output_tokens: int = 400,
+    thinking_budget: int = 0,
     temperature: float = 0.2,
 ) -> TextResult | None:
     """Sinh văn bản tự do — dùng cho câu trả lời RAG (giai đoạn 2).
@@ -307,7 +322,7 @@ def generate_text(
                 system_instruction=system_instruction,
                 temperature=temperature,
                 max_output_tokens=max_output_tokens,
-                thinking_config=types.ThinkingConfig(thinking_budget=0),  # KT-04
+                thinking_config=types.ThinkingConfig(thinking_budget=thinking_budget),
             ),
         )
     except Exception as exc:  # pragma: no cover - phụ thuộc mạng

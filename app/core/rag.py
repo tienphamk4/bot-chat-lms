@@ -73,6 +73,8 @@ def answer(
     trace=None,
     embed_future=None,
     scope_doc_type: str | None = None,
+    assistant_slug: str | None = None,
+    persona=None,
 ) -> RagResult | None:
     """Chạy trọn nhánh RAG. Trả None khi không sinh được — nơi gọi tự fallback.
 
@@ -122,7 +124,7 @@ def answer(
 
     result = _generate_pass(
         identity, route, course, keep, emit, trace, query_vector, tokens_embed,
-        enrolled_scope if course is None else None, scope_doc_type, settings,
+        enrolled_scope if course is None else None, scope_doc_type, settings, assistant_slug, persona,
     )
 
     if result is not None and result.not_found and course_soft:
@@ -130,7 +132,7 @@ def answer(
             trace.mark("môn của trang không có câu trả lời — bỏ ràng buộc môn")
         result = _generate_pass(
             identity, route, None, keep, emit, trace, query_vector, tokens_embed,
-            enrolled_scope, scope_doc_type, settings,
+            enrolled_scope, scope_doc_type, settings, assistant_slug, persona,
         )
 
     if (
@@ -143,7 +145,7 @@ def answer(
             trace.mark("phạm vi môn đang học không ra — thử toàn kho")
         result = _generate_pass(
             identity, route, None, keep, emit, trace, query_vector, tokens_embed,
-            None, scope_doc_type, settings,
+            None, scope_doc_type, settings, assistant_slug, persona,
         )
 
     # Van cuối: khoanh theo LOẠI tài liệu cũng là scope mềm — đúng loại không
@@ -153,7 +155,7 @@ def answer(
             trace.mark("đúng loại tài liệu không ra — mở mọi loại")
         result = _generate_pass(
             identity, route, None, keep, emit, trace, query_vector, tokens_embed,
-            None, None, settings,
+            None, None, settings, assistant_slug, persona,
         )
     return result
 
@@ -184,7 +186,7 @@ def _select_diverse(pool: list[dict], keep: int) -> list[dict]:
 
 
 def _stream_generation(
-    question: str, chunks: list[dict], emit, trace, settings
+    question: str, chunks: list[dict], emit, trace, settings, persona=None
 ) -> tuple[list[str], set[int], "vertex.TextResult | None", bool]:
     """Một lượt sinh + hậu kiểm trích dẫn theo câu.
 
@@ -226,12 +228,22 @@ def _stream_generation(
             else:
                 held_unmarked.append(sentence)
 
+    # Ba tham số lấy từ cấu hình của CHÍNH bot đang trả lời; bot không khai thì
+    # rơi về mặc định hệ thống. Trần token đã cộng sẵn ngân sách suy luận nên
+    # bật suy luận không làm cụt câu trả lời.
+    from app.core.personas import DEFAULT as _DEFAULT_PERSONA
+
+    temperature, max_tokens, thinking = (persona or _DEFAULT_PERSONA).generation_config(
+        settings
+    )
+
     for kind, payload in vertex.generate_text_stream(
         system_instruction=RAG_SYSTEM,
         prompt=rag_prompt(question, chunks),
         model=settings.gen_model,
-        max_output_tokens=settings.gen_max_output_tokens,
-        temperature=settings.gen_temperature,
+        max_output_tokens=max_tokens,
+        temperature=temperature,
+        thinking_budget=thinking,
     ):
         if kind == "delta":
             buffer += payload
@@ -258,6 +270,8 @@ def _generate_pass(
     scope,
     scope_doc_type: str | None,
     settings,
+    assistant_slug: str | None = None,
+    persona=None,
 ) -> RagResult | None:
     """Một lượt trọn vẹn: truy hồi → rerank → sinh → kiểm trích dẫn."""
     question = route.standalone_question
@@ -271,6 +285,7 @@ def _generate_pass(
         per_channel=settings.rag_topk_per_channel,
         scope_course_ids=scope,
         scope_doc_type=scope_doc_type,
+        assistant_slug=assistant_slug,
     )
     if not candidates and (scope or scope_doc_type):
         # Phạm vi ngữ cảnh trống trơn → nới ra toàn kho (vẫn đúng quyền).
@@ -281,6 +296,9 @@ def _generate_pass(
             route.keywords,
             course,
             per_channel=settings.rag_topk_per_channel,
+            # Nới phạm vi NGỮ CẢNH thôi. Ranh giới bot giữ nguyên: nới sang kho
+            # của bot khác là bot tuyển sinh đi chìa ra giáo trình kiểm thử.
+            assistant_slug=assistant_slug,
         )
     if trace:
         trace.mark("truy hồi hybrid ‖ (DB)")
@@ -292,13 +310,13 @@ def _generate_pass(
     # Pool rộng gấp đôi rồi CHỌN ĐA DẠNG: không reranker thì thứ hạng RRF thô,
     # một bộ slide điểm cao dễ chiếm trọn suất trong khi câu trả lời nằm ở tài
     # liệu khác — chặn mỗi tài liệu tối đa 3 chunk trong lượt đầu.
-    pool = reranker.rerank(question, candidates, keep=keep * 2)
+    pool = reranker.rerank(question, candidates, keep=keep * 2, phrases=route.keywords)
     if trace:
         trace.mark("rerank")
 
     chunks = _select_diverse(pool, keep)
     kept, cited, final, model_said_no = _stream_generation(
-        question, chunks, emit, trace, settings
+        question, chunks, emit, trace, settings, persona
     )
     tokens_in = final.tokens_in if final else 0
     tokens_out = final.tokens_out if final else 0
@@ -309,12 +327,29 @@ def _generate_pass(
     # câu trả lời dở vào nhau.
     if (not kept or not cited) and not cited:
         used = {c["chunk_id"] for c in chunks}
-        second = [c for c in pool if c["chunk_id"] not in used][:keep]
+        # Lớp kế phải BÁM ĐÚNG CHỦ ĐỀ như lớp đầu, nếu không câu trả lời trôi
+        # sang đối tượng khác.
+        #
+        # Ca thật: "ngành Khoa học máy tính ra trường làm gì" — ba chunk đúng
+        # ngành lên đầu, nhưng tài liệu không nói vị trí việc làm của riêng
+        # ngành đó nên model bảo không thấy. Lớp kế kéo lên chunk Công nghệ
+        # thông tin, model trả lời trôi chảy về NGÀNH KHÁC mà người hỏi không
+        # có cách nào biết. Trả lời sai đối tượng còn tệ hơn nói chưa có.
+        #
+        # `context_score` = tổng trọng số các từ của câu hỏi khớp với bối cảnh
+        # chunk (xem rerank.by_context). Không có bối cảnh thì mọi chunk đều 0
+        # và điều kiện này tự động vô hiệu — hành vi cũ giữ nguyên.
+        best_score = max((c.get("context_score", 0.0) for c in pool), default=0.0)
+        second = [
+            c for c in pool
+            if c["chunk_id"] not in used
+            and c.get("context_score", 0.0) >= best_score - 1e-9
+        ][:keep]
         if second:
             if trace:
                 trace.mark("sinh — chưa thấy, thử lớp chunk kế")
             kept2, cited2, final2, said_no2 = _stream_generation(
-                question, second, emit, trace, settings
+                question, second, emit, trace, settings, persona
             )
             tokens_in += final2.tokens_in if final2 else 0
             tokens_out += final2.tokens_out if final2 else 0

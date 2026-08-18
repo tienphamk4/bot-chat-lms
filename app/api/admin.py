@@ -36,6 +36,7 @@ async def upload_document(
     doc_type: str | None = Query(None),
     semester: str | None = Query(None, pattern=r"^20\d{2}[1-3]$"),
     access: str = Query("public", pattern=r"^(public|faculty|course|staff)$"),
+    assistant: str | None = Query(None, max_length=64),
 ):
     """Nhận file, lưu vào FILES_ROOT/uploads/, nạp ngay.
 
@@ -51,6 +52,15 @@ async def upload_document(
             detail=f"Chỉ nhận: {', '.join(sorted(SUPPORTED_EXTENSIONS))}",
         )
 
+    # Tên file trên đĩa phải là ASCII an toàn, nhưng tên GỐC là nguồn tiêu đề
+    # tốt nhất ta có — giữ lại trước khi vặt.
+    #
+    # Đây là gốc rễ của một tiêu đề hỏng đã vào kho: file gốc tên
+    # "Database Indexing – Những điều Developer Cần Biết.pdf", sau khi vặt còn
+    # "Database_Indexing___Nh_ng__i_u_Developer_C_n_Bi_t.pdf", rồi Title Engine
+    # lấy chính cái tên đã hỏng đó làm tiêu đề. Vá ở tầng tiêu đề không cứu
+    # được vì thông tin đã mất từ bước này.
+    original_stem = Path(file.filename or "").stem.replace("_", " ").strip()
     safe_name = _SAFE_NAME.sub("_", Path(file.filename or "upload").name)
     uploads_dir = settings.files_root / "uploads"
     uploads_dir.mkdir(parents=True, exist_ok=True)
@@ -69,9 +79,13 @@ async def upload_document(
         temp_path = Path(buffer.name)
     shutil.move(temp_path, destination)
 
-    if course_code or doc_type or semester or access != "public":
+    # Luôn ghi manifest khi tên gốc có ký tự ngoài ASCII: đó là lúc tên trên
+    # đĩa đã mất thông tin, và manifest là tầng metadata thắng tất cả.
+    ten_goc_co_dau = any(ord(ch) > 127 for ch in original_stem)
+    if course_code or doc_type or semester or access != "public" or ten_goc_co_dau:
         _append_manifest(
-            settings.files_root, destination, course_code, doc_type, semester, access
+            settings.files_root, destination, course_code, doc_type, semester, access,
+            title=original_stem if ten_goc_co_dau else None,
         )
 
     # --- Nạp BẤT ĐỒNG BỘ: trả về ngay, pipeline chạy thread nền -------------
@@ -108,7 +122,7 @@ async def upload_document(
     )
     threading.Thread(
         target=_ingest_in_background,
-        args=(destination, settings.files_root, checksum),
+        args=(destination, settings.files_root, checksum, assistant),
         daemon=True,
     ).start()
     return {
@@ -152,11 +166,15 @@ def _create_processing_stub(
     return int(row["id"]) if row else 0
 
 
-def _ingest_in_background(destination: Path, files_root: Path, checksum: str) -> None:
+def _ingest_in_background(
+    destination: Path, files_root: Path, checksum: str, assistant: str | None = None
+) -> None:
     from ingest.loader import ingest_file
 
     try:
         result = ingest_file(destination, files_root)
+        if assistant:
+            _link_assistant(checksum, assistant)
         if result.status == "indexed":
             _schedule_embed()  # chunk mới embed ở nền
     except Exception as exc:  # pipeline chết thì stub phải nói thật, không treo
@@ -169,6 +187,30 @@ def _ingest_in_background(destination: Path, files_root: Path, checksum: str) ->
             )
         except Exception:
             pass
+
+
+def _link_assistant(checksum: str, slug: str) -> None:
+    """Gắn tài liệu vừa nạp vào bot đang mở trong trang quản trị.
+
+    Nạp từ màn hình của một bot thì mặc nhiên là tài liệu của bot đó — bắt
+    người quản trị tick lại từng file sau khi upload là việc thừa.
+    """
+    from app.db import execute
+
+    try:
+        execute(
+            """
+            INSERT IGNORE INTO assistant_documents (assistant_id, document_id)
+            SELECT a.id, d.id FROM assistants a, documents d
+             WHERE a.slug = :slug AND d.checksum = :checksum
+            """,
+            {"slug": slug, "checksum": checksum},
+        )
+        from app.core.retrieval import clear_assistant_scope_cache
+
+        clear_assistant_scope_cache()
+    except Exception:  # gắn hụt không được làm hỏng lượt nạp
+        pass
 
 
 @router.get("/ingest-status/{checksum}")
@@ -288,6 +330,37 @@ def _schedule_embed() -> None:
             _embed_lock.release()
 
     threading.Thread(target=_run, daemon=True).start()
+
+
+@router.post("/embed")
+async def embed_missing(identity: AdminIdentity):
+    """Lấp vector cho mọi chunk còn thiếu — bản giao diện của `ingest.cli embed`.
+
+    Vì sao cần nút này: vector được tính ở NỀN sau khi nạp xong, nên gặp trục
+    trặc — hết hạn mức, mạng chớp tắt — thì tài liệu nằm lại ở trạng thái "thiếu
+    vector" mà không có gì trên giao diện gỡ được. Người vận hành không dùng
+    dòng lệnh sẽ mắc kẹt: tài liệu tra cứu được theo tên nhưng hỏi nội dung thì
+    không ra, và không hiểu vì sao.
+
+    Chạy ĐỒNG BỘ để trả về con số thật (đã lấp bao nhiêu, hỏng mấy lô) thay vì
+    báo "đang chạy ở nền" rồi bắt người dùng đoán. Idempotent: bấm lại nhiều
+    lần vô hại, lô nào hỏng thì lần sau thử tiếp.
+    """
+    if not _embed_lock.acquire(blocking=False):
+        raise HTTPException(
+            status_code=409, detail="Đang có một lượt tính vector chạy — chờ xong rồi bấm lại."
+        )
+    try:
+        from ingest.loader import embed_pending
+
+        result = await run_in_threadpool(embed_pending)
+    finally:
+        _embed_lock.release()
+
+    con_thieu = await run_in_threadpool(
+        fetch_one, "SELECT COUNT(*) AS n FROM document_chunks WHERE embedding IS NULL"
+    )
+    return {**result, "remaining": int((con_thieu or {}).get("n") or 0)}
 
 
 @router.post("/scan")
@@ -442,13 +515,72 @@ async def list_all_documents(identity: AdminIdentity):
                (SELECT COUNT(*) FROM document_chunks ch
                 WHERE ch.document_id = d.id) AS chunks,
                (SELECT COUNT(*) FROM document_chunks ch
-                WHERE ch.document_id = d.id AND ch.embedding IS NOT NULL) AS embedded
+                WHERE ch.document_id = d.id AND ch.embedding IS NOT NULL) AS embedded,
+               -- Bot nào đang dùng tài liệu này. Gộp ở SQL thay vì N+1 lượt
+               -- gọi từ trình duyệt: bảng 500 dòng mà mỗi dòng một request thì
+               -- trang quản trị đứng hình.
+               (SELECT GROUP_CONCAT(a.slug ORDER BY a.sort_order)
+                  FROM assistant_documents ad
+                  JOIN assistants a ON a.id = ad.assistant_id
+                 WHERE ad.document_id = d.id) AS assistant_slugs
         FROM documents d
         LEFT JOIN courses c ON c.id = d.course_id
         ORDER BY d.id DESC
         LIMIT 500
         """,
     )
+
+
+class DocAssistantsIn(BaseModel):
+    """Gán tài liệu cho các bot. `slugs` rỗng = gỡ khỏi mọi bot."""
+
+    document_ids: list[int] = Field(min_length=1, max_length=200)
+    slugs: list[str] = Field(default_factory=list, max_length=20)
+
+
+@router.post("/documents/assistants")
+async def set_document_assistants(body: DocAssistantsIn, identity: AdminIdentity):
+    """Đặt LẠI danh sách bot cho các tài liệu đã chọn (thay thế, không cộng dồn).
+
+    Thay-thế chứ không cộng-dồn là có chủ đích: người quản trị tick vào ô nào
+    thì kết quả đúng bằng những ô đang tick, không phải đoán xem lần trước đã
+    gán gì. Bỏ hết tick = gỡ tài liệu khỏi mọi bot, và khi đó bot quay về đọc
+    toàn kho theo doc_types.
+    """
+    from app.core import personas
+    from app.core.retrieval import clear_assistant_scope_cache
+    from app.db import execute, in_clause
+
+    def _apply() -> int:
+        doc_sql, doc_params = in_clause("doc", body.document_ids)
+        execute(
+            f"DELETE FROM assistant_documents WHERE document_id IN ({doc_sql})",
+            doc_params,
+        )
+        if not body.slugs:
+            return 0
+
+        slug_sql, slug_params = in_clause("slug", body.slugs)
+        rows = fetch_all(
+            f"SELECT id FROM assistants WHERE slug IN ({slug_sql})", slug_params
+        )
+        n = 0
+        for row in rows:
+            for document_id in body.document_ids:
+                execute(
+                    "INSERT IGNORE INTO assistant_documents (assistant_id, document_id) "
+                    "VALUES (:a, :d)",
+                    {"a": row["id"], "d": document_id},
+                )
+                n += 1
+        return n
+
+    n = await run_in_threadpool(_apply)
+    # Phạm vi truy hồi đọc qua cache 60 giây — xóa ngay để người quản trị thử
+    # lại trong popup là thấy đổi, khỏi ngồi chờ.
+    await run_in_threadpool(clear_assistant_scope_cache)
+    await run_in_threadpool(personas.clear_cache)
+    return {"linked": n}
 
 
 class DeleteIn(BaseModel):
@@ -735,6 +867,9 @@ def _append_manifest(
     doc_type: str | None,
     semester: str | None,
     access: str,
+    title: str | None = None,
 ) -> None:
     relative = str(file_path.relative_to(files_root)).replace("\\", "/")
-    _upsert_manifest(files_root, relative, course_code, doc_type, semester, access)
+    _upsert_manifest(
+        files_root, relative, course_code, doc_type, semester, access, title=title
+    )

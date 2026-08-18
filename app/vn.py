@@ -167,6 +167,120 @@ def norm_residue_ratio(norm_text: str) -> float:
     return suspicious / len(letters)
 
 
+# Hư từ và từ để hỏi — dạng ĐÃ bỏ dấu, vì lọc chạy sau vn_norm.
+#
+# Chúng không thu hẹp kết quả mà chỉ phá truy vấn: ở chế độ AND, một chữ "gì"
+# không có trong tài liệu là đủ để trả về rỗng; ở chế độ OR, "của/các/một" khớp
+# gần như mọi chunk và nhấn chìm từ có nghĩa (BOOLEAN MODE của MySQL xếp hạng
+# theo SỐ từ khớp, không có IDF, nên từ phổ thông nặng ngang từ hiếm).
+#
+# CẠM BẪY chi phối cả danh sách này: bỏ dấu xong thì hư từ và từ có nghĩa đụng
+# nhau. Mỗi mục dưới đây đã soi qua bẫy đó, và những mục sau đây bị LOẠI dù
+# chúng đúng là hư từ:
+#
+#   thì→thi (đề thi)      · có→co (cơ sở, cơ hội)  · tại→tai (tài liệu)
+#   mà→ma (mã ngành)      · hỏi→hoi (cơ hội)       · khi→khi (khí hậu, cơ khí)
+#   trong→trong (trọng tâm) · như→nhu (nhu cầu)    · chỉ→chi (chỉ tiêu, chi phí)
+#   anh→anh (tiếng Anh)   · ai→ai (AI)             · đây→day (giảng dạy)
+#   ngoài→ngoai (ngoại ngữ) · nên→nen (nền tảng)   · qua→qua (kết quả)
+#   do→do (trình độ)      · mình→minh (Hồ Chí Minh) · bí→bi (bí thư)
+#
+# Muốn thêm từ vào đây thì phải trả lời được: dạng bỏ dấu của nó có trùng với
+# từ có nghĩa nào trong kho không?
+_FT_STOPWORDS = frozenset(
+    """
+    gi nao sao la cua cho voi va cac nhung mot duoc ve tren duoi neu theo
+    muon nhieu toi em nay kia ay nhe nhi roi chua rat phai hay con nua boi
+    xin oi
+    """.split()
+)
+
+# Cụm từ để hỏi — bỏ theo CỤM chứ không theo từ, nhờ vậy dùng được cả những
+# tiếng vốn không an toàn khi đứng một mình ("thế", "có", "bao"): "bao nhiêu"
+# thì bỏ, còn "báo cáo" thì giữ.
+_FT_STOP_PHRASES: tuple[tuple[str, ...], ...] = tuple(
+    tuple(p.split())
+    for p in (
+        "nhu the nao", "gom nhung gi", "bao gom nhung gi",
+        "bao nhieu", "the nao", "ra sao", "la gi", "co the",
+        "hay khong", "duoc khong", "co phai", "phai khong",
+    )
+)
+
+# Dưới ngưỡng này thì không lọc: câu ngắn ("thi lại thế nào") mà bỏ hư từ có
+# khi chẳng còn gì để tìm.
+_MIN_CONTENT_WORDS = 2
+
+
+def _strip_stop_phrases(words: list[str]) -> list[str]:
+    """Bỏ các cụm hỏi, cụm dài ưu tiên trước."""
+    for phrase in sorted(_FT_STOP_PHRASES, key=len, reverse=True):
+        size = len(phrase)
+        index = 0
+        while index + size <= len(words):
+            if tuple(words[index:index + size]) == phrase:
+                del words[index:index + size]
+            else:
+                index += 1
+    return words
+
+
+# Dấu câu bám ở HAI ĐẦU token. Không phải cú pháp BOOLEAN MODE nên _FT_SPECIAL
+# bỏ qua, nhưng chúng vẫn phá việc nhận diện hư từ: câu hỏi do router viết lại
+# gần như luôn kết thúc bằng "?", nên token cuối là "gi?" chứ không phải "gi"
+# — hư từ không bị lọc, lại còn thành một từ khóa rác trong biểu thức.
+# Chỉ cắt hai đầu: '2024.10.01.309' và '4_0' phải nguyên vẹn.
+_EDGE_PUNCT = ".,;:?!…“”‘’'«»"
+
+
+def _tokenize(text: str) -> list[str]:
+    cleaned = _FT_SPECIAL.sub(" ", vn_norm(text))
+    return [w for w in (t.strip(_EDGE_PUNCT) for t in cleaned.split()) if w]
+
+
+def content_terms(text: str) -> list[str]:
+    """Các từ MANG NGHĨA của một câu — đã bỏ dấu, bỏ cụm hỏi và hư từ.
+
+    Dùng chung cho truy vấn FULLTEXT và cho việc chấm mức khớp bối cảnh, để hai
+    nơi luôn hiểu "từ có nghĩa" giống hệt nhau.
+    """
+    words = _strip_stop_phrases(_tokenize(text))
+    return [w for w in words if w not in _FT_STOPWORDS]
+
+
+def ft_phrase_queries(phrases, limit: int = 3) -> list[str]:
+    """Các biểu thức BOOLEAN MODE đòi ĐÚNG một cụm, dạng `+"kinh te so"`.
+
+    Nhận `keywords` của router, trả về danh sách đã xếp từ cụm NHIỀU TỪ NHẤT
+    xuống — nơi gọi thử lần lượt, dừng ở cụm đầu tiên có kết quả. Cụm nhiều từ
+    thường là cụm riêng ("Kinh tế số", "Luật kinh tế"); cụm hai từ hay là loại
+    chung chung router kèm thêm ("chương trình", "việc làm").
+
+    KHÔNG đòi mọi cụm cùng lúc: cụm chung chung mà tài liệu không nhắc sẽ giết
+    cả truy vấn. Thử riêng từng cụm thì cụm hỏng chỉ tốn một lượt rồi bỏ.
+
+    Vì sao cần bậc riêng cho cụm: BOOLEAN MODE của MySQL xếp hạng theo SỐ từ
+    khớp, không có IDF. Câu "chương trình Kinh tế số học gì" rã thành sáu âm
+    tiết phổ thông và nửa kho khớp năm trong sáu, nên chương trình Kinh tế số
+    thật chẳng nổi hơn ai. Đòi nguyên cụm thì chỉ vài chunk khớp. Bậc này gánh
+    chính khi kênh vector chết vì nghẽn quota embedding — đúng lúc hệ thống dễ
+    trả lời sai nhất.
+
+    >>> ft_phrase_queries(["chương trình", "Kinh tế số"])
+    ['+"kinh te so"', '+"chuong trinh"']
+    >>> ft_phrase_queries(["gì"])
+    []
+    """
+    seen: list[str] = []
+    for phrase in phrases or ():
+        normalized = " ".join(_tokenize(str(phrase or "")))
+        if len(normalized.split()) >= 2 and normalized not in seen:
+            seen.append(normalized)
+    # Nhiều từ trước; bằng nhau thì giữ nguyên thứ tự router đưa ra.
+    seen.sort(key=lambda p: -len(p.split()))
+    return [f'+"{p}"' for p in seen[:limit]]
+
+
 def ft_boolean_query(text: str, mode: str = "and") -> str:
     """Chuyển câu hỏi của người dùng thành biểu thức BOOLEAN MODE an toàn.
 
@@ -177,21 +291,39 @@ def ft_boolean_query(text: str, mode: str = "and") -> str:
     Từ ASCII 1 ký tự bị loại khi câu còn từ khác: min_token_size=1 làm chữ cái
     đơn ('c', 'a') khớp cả trăm chunk, kéo nhiễu đè lên từ có nghĩa.
 
+    `mode` có bốn bậc, nới dần:
+
+    - `and`         — mọi từ đều bắt buộc. Chính xác nhất.
+    - `and_content` — bắt buộc, nhưng bỏ hư từ trước. Cứu ca câu hỏi tự nhiên:
+      "ngành An toàn thông tin học những môn gì" trượt AND chỉ vì chữ "gì".
+    - `or_content`  — nới sang OR nhưng vẫn không có hư từ. Nhiễu thấp hơn `or`
+      nhiều, vì "của/các/một" không còn kéo về cả kho.
+    - `or`          — bậc cuối, chấp nhận mọi thứ.
+
     >>> ft_boolean_query("Đề thi giữa kỳ (2026)")
     '+de +thi +giua +ky +2026'
     >>> ft_boolean_query("giải tích", mode="or")
     'giai tich'
     >>> ft_boolean_query("lập trình C")
     '+lap +trinh'
+    >>> ft_boolean_query("ngành nào có học phí thấp", mode="and_content")
+    '+nganh +hoc +phi +thap'
     """
-    cleaned = _FT_SPECIAL.sub(" ", vn_norm(text))
-    words = [w for w in cleaned.split() if w]
+    words = _tokenize(text)
     if len(words) > 1:
         multi = [w for w in words if not (len(w) == 1 and w.isascii() and w.isalpha())]
         if multi:
             words = multi
     if not words:
         return ""
-    if mode == "and":
+
+    if mode in ("and_content", "or_content"):
+        content = [
+            w for w in _strip_stop_phrases(list(words)) if w not in _FT_STOPWORDS
+        ]
+        if len(content) >= _MIN_CONTENT_WORDS:
+            words = content
+
+    if mode in ("and", "and_content"):
         return " ".join(f"+{w}" for w in words)
     return " ".join(words)

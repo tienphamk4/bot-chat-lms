@@ -59,6 +59,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     renorm.add_argument("--dry-run", action="store_true", help="chỉ đếm, không ghi")
 
+    backfill = subparsers.add_parser(
+        "backfill-context",
+        help="gắn bối cảnh cho chunk đã nạp (009) — không phải nạp lại file",
+    )
+    backfill.add_argument("--doc-id", type=int, default=None, help="chỉ một tài liệu")
+    backfill.add_argument(
+        "--no-llm", action="store_true",
+        help="chỉ dùng bối cảnh cấu trúc (0 token), bỏ tầng model",
+    )
+    backfill.add_argument("--dry-run", action="store_true", help="chỉ in, không ghi")
+
     reindex_all = subparsers.add_parser(
         "reindex-all",
         help="nạp lại TOÀN BỘ tài liệu qua pipeline mới (chunk + heading + tiêu đề)",
@@ -111,6 +122,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if result.status == "indexed" else 1
     if args.command == "renorm":
         return _renorm(dry_run=args.dry_run)
+    if args.command == "backfill-context":
+        return _backfill_context(
+            doc_id=args.doc_id, use_llm=not args.no_llm, dry_run=args.dry_run
+        )
     if args.command == "reindex-all":
         return _reindex_all(args.status)
     if args.command == "import-courses":
@@ -448,6 +463,99 @@ def _refresh_index() -> None:
         course_index.refresh()
     except Exception:  # pragma: no cover
         log.debug("Không làm mới được course_index (không sao khi chạy CLI)")
+
+
+def _backfill_context(
+    doc_id: int | None = None, use_llm: bool = True, dry_run: bool = False
+) -> int:
+    """Gắn bối cảnh cho chunk ĐÃ nằm trong CSDL, không đụng tới file gốc.
+
+    Ba cột được ghi lại: `context_text`, `is_fragment`, và `content_norm` (vì
+    FULLTEXT phải khớp trên văn bản đã kèm bối cảnh). Cột `embedding` bị xóa
+    để lượt `embed` sau nhúng lại theo văn bản mới — bỏ bước đó thì kênh vector
+    vẫn giữ vector cũ và nửa cái vá không có tác dụng.
+
+    Nạp lại cả file cũng ra kết quả này, nhưng tốn OCR/trích xuất lại và làm
+    đổi id chunk; ở đây chỉ cần một lượt ghi.
+    """
+    from sqlalchemy import text
+
+    from app.db import connection, fetch_all
+    from app.vn import vn_norm
+    from ingest import context as chunk_context
+
+    where = "WHERE d.id = :doc_id" if doc_id else ""
+    params = {"doc_id": doc_id} if doc_id else {}
+    docs = fetch_all(
+        f"""
+        SELECT d.id, d.title, c.name AS course_name
+        FROM documents d
+        LEFT JOIN courses c ON c.id = d.course_id
+        {where}
+        ORDER BY d.id
+        """,
+        params,
+    )
+    if not docs:
+        log.error("Không có tài liệu nào khớp")
+        return 1
+
+    total = fragments = 0
+    for doc in docs:
+        rows = fetch_all(
+            """
+            SELECT id, content, heading_path, page_from
+            FROM document_chunks WHERE document_id = :d ORDER BY chunk_index
+            """,
+            {"d": doc["id"]},
+        )
+        if not rows:
+            continue
+        log.info("[%s] %s — %d chunk", doc["id"], doc["title"], len(rows))
+        contexts = chunk_context.build(
+            [dict(r) for r in rows],
+            doc_title=doc["title"],
+            course_name=doc.get("course_name"),
+            use_llm=use_llm,
+        )
+        payload = []
+        for row, ctx in zip(rows, contexts):
+            flag = int(chunk_context.is_fragmented(row["content"]))
+            fragments += flag
+            payload.append(
+                {
+                    "id": row["id"],
+                    "ctx": ctx or None,
+                    "flag": flag,
+                    "norm": vn_norm(chunk_context.indexed_text(ctx, row["content"])),
+                }
+            )
+        total += len(payload)
+        if dry_run:
+            for item, row in list(zip(payload, rows))[:5]:
+                log.info("  tr%s -> %s", row["page_from"], item["ctx"])
+            continue
+        with connection() as conn:
+            conn.execute(
+                text(
+                    """
+                    UPDATE document_chunks
+                       SET context_text = :ctx, is_fragment = :flag,
+                           content_norm = :norm, embedding = NULL
+                     WHERE id = :id
+                    """
+                ),
+                payload,
+            )
+
+    log.info(
+        "Xong: %d chunk%s, %d chunk là bảng vỡ định dạng (bị loại khỏi RAG). "
+        "Chạy `embed` để nhúng lại.",
+        total,
+        " (dry-run)" if dry_run else "",
+        fragments,
+    )
+    return 0
 
 
 if __name__ == "__main__":

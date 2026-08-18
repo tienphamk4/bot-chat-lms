@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from ingest.meta import resolve
 
 
@@ -97,3 +99,64 @@ class TestManifest:
         (tmp_path / "manifest.csv").write_bytes(b"\xff\xfe broken")
         meta = resolve(f, tmp_path)
         assert meta.course_code == "MAT1093"
+
+
+class TestTitleEngineHaiLoiThat:
+    """Hai lỗi tiêu đề gặp trên kho thật, không phải giả định."""
+
+    def test_khong_lay_ten_nguoi_soan_lam_tieu_de(self):
+        """Bộ slide có tiêu đề trong CSDL là "THS. NGUYỄN THỊ YẾN" — dòng đó in
+        hoa, có dấu, dài vừa đủ nên lọt hết mọi bộ lọc cũ."""
+        from ingest.meta import title_from_content
+
+        title = title_from_content([
+            "THS. NGUYỄN THỊ YẾN",
+            "Khoa Công nghệ thông tin & kinh tế số",
+            "CHƯƠNG 3",
+            "CÁC HOẠT ĐỘNG RÀ SOÁT",
+        ])
+        assert title is not None
+        assert "YẾN" not in title
+        assert "RÀ SOÁT" in title
+
+    @pytest.mark.parametrize(
+        "line",
+        ["THS. NGUYỄN THỊ YẾN", "ThS Nguyễn Thị Yến", "Nguyễn Thị Yến",
+         "GIẢNG VIÊN: TRẦN VĂN A", "PGS.TS Lê Minh"],
+    )
+    def test_nhan_ra_dong_ten_nguoi(self, line: str):
+        from ingest.meta import _la_ten_nguoi
+
+        assert _la_ten_nguoi(line)
+
+    @pytest.mark.parametrize(
+        "line",
+        ["KIỂM THỬ PHẦN MỀM", "CÁC NGUYÊN NHÂN GÂY RA LỖI PHẦN MỀM",
+         "GIÁO TRÌNH GIẢI TÍCH 1", "TÍCH HỢP CÁC HOẠT ĐỘNG ĐẢM BẢO"],
+    )
+    def test_khong_nham_tieu_de_that_thanh_ten_nguoi(self, line: str):
+        from ingest.meta import _la_ten_nguoi
+
+        assert not _la_ten_nguoi(line)
+
+    def test_loai_tieu_de_mat_dau(self):
+        """"Những điều Developer Cần Biết" sau khi mất dấu thành "Nh ng i u
+        Developer C n Bi t" — vào kho là trích dẫn hiện lên xấu và tìm theo
+        tiêu đề luôn trượt vì title_norm sai."""
+        from ingest.meta import _mat_dau, title_from_content
+
+        hong = "Database Indexing Nh ng i u Developer C n Bi t"
+        assert _mat_dau(hong)
+        # H1 markdown trước đây được nhận vô điều kiện — đó là đường nó lọt vào.
+        assert title_from_content([f"# {hong}", "Lời mở đầu"]) is None
+
+    @pytest.mark.parametrize(
+        "line",
+        ["Những điều Developer Cần Biết", "Giáo trình Giải tích 1",
+         "Database Indexing Deep Dive Guide", "An Introduction to Testing"],
+    )
+    def test_khong_nham_tieu_de_lanh_lan_thanh_mat_dau(self, line: str):
+        """Tiêu đề tiếng Anh không có dấu là chuyện bình thường, không phải hỏng."""
+        from ingest.meta import _mat_dau
+
+        assert not _mat_dau(line)

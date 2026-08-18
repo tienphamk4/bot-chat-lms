@@ -330,19 +330,23 @@ def title_from_content(front_lines: list[str]) -> str | None:
                 if norm_is_banner(normed[j]):
                     continue
                 # dòng hoa-có-dấu ngay dưới nhãn cũng là ứng viên tên
-                if _caps_titleish(lines[j]):
+                if _caps_titleish(lines[j]) and not _la_ten_nguoi(lines[j]):
                     return _clamp_title(f"{lines[i].title()} {lines[j].title()}")
             return _clamp_title(lines[i].title())
 
     # C — markdown H1
     for line in lines:
         if line.startswith("# "):
-            return _clamp_title(line[2:].strip())
+            h1 = line[2:].strip()
+            # H1 trước đây được nhận vô điều kiện — đó là đường mà tiêu đề mất
+            # dấu đi lọt vào kho.
+            if not _mat_dau(h1) and not _la_ten_nguoi(h1):
+                return _clamp_title(h1)
 
     # D — dòng hoa có dấu dài nhất, không phải banner
     candidates = [
         l for l, n in zip(lines, normed)
-        if _caps_titleish(l) and not norm_is_banner(n)
+        if _caps_titleish(l) and not norm_is_banner(n) and not _la_ten_nguoi(l)
     ]
     if candidates:
         return _clamp_title(max(candidates, key=len))
@@ -351,6 +355,64 @@ def title_from_content(front_lines: list[str]) -> str | None:
 
 def norm_is_banner(norm_line: str) -> bool:
     return any(norm_line.startswith(p) for p in _BANNER_PREFIXES)
+
+
+# Học hàm, học vị và vai trò đứng trước TÊN NGƯỜI trên trang bìa. Dòng bắt đầu
+# bằng những cụm này là dòng ghi công tác giả, không phải tên tài liệu.
+#
+# Ca thật đã gặp: một bộ slide có tiêu đề trong CSDL là "THS. NGUYỄN THỊ YẾN" —
+# dòng đó in hoa, có dấu, dài vừa đủ nên qua hết mọi bộ lọc cũ.
+_NGUOI_SOAN = re.compile(
+    r"^(th\s?s|thac si|ts|tien si|pgs|gs|cn|ks|nghien cuu sinh|ncs"
+    r"|giang vien|gv|giao vien|bien soan|tac gia|chu bien|nguoi soan"
+    r"|bien tap|phu trach)\b[\s.:,-]*"
+)
+
+
+def _la_ten_nguoi(line: str) -> bool:
+    """Dòng ghi tên người soạn chứ không phải tên tài liệu."""
+    norm = vn_norm(line)
+    if _NGUOI_SOAN.match(norm):
+        return True
+    # Tên trần trụi: 2-4 âm tiết, toàn từ họ-tên phổ biến, không có từ nội dung.
+    tokens = norm.split()
+    if 2 <= len(tokens) <= 4 and all(t in _HO_TEN_PHO_BIEN for t in tokens):
+        return True
+    return False
+
+
+# Đủ để bắt phần lớn dòng tên trần trụi trên bìa; không cố vét hết vì nhận nhầm
+# một tiêu đề thật thành tên người còn tệ hơn.
+_HO_TEN_PHO_BIEN = {
+    "nguyen", "tran", "le", "pham", "hoang", "huynh", "phan", "vu", "vo",
+    "dang", "bui", "do", "ho", "ngo", "duong", "ly", "dinh", "truong", "mai",
+    "van", "thi", "quang", "minh", "anh", "tuan", "hung", "yen", "lan", "huong",
+    "thuy", "trang", "hanh", "linh", "phuong", "nga", "ha", "thu", "duc", "nam",
+}
+
+
+def _mat_dau(line: str) -> bool:
+    """Chuỗi tiếng Việt bị vặt sạch dấu — dùng chung tín hiệu với quality.py.
+
+    Ca thật: tiêu đề trong CSDL là "Database Indexing Nh ng i u Developer C n
+    Bi t" — nguyên văn "Những điều Developer Cần Biết" sau khi mất dấu. Không
+    có bộ lọc này thì tiêu đề hỏng đi thẳng vào kho, trích dẫn hiện lên xấu và
+    tìm theo tiêu đề luôn trượt vì title_norm sai.
+
+    Dấu hiệu: nhiều mảnh chữ cụt 1-2 ký tự, mà cả dòng gần như không có dấu.
+    """
+    tokens = [t for t in re.split(r"\s+", line.strip()) if t]
+    if len(tokens) < 4:
+        return False
+    letters = [ch for ch in line if ch.isalpha()]
+    if not letters:
+        return False
+
+    from ingest.quality import _VN_DIACRITICS
+
+    ty_le_dau = sum(1 for ch in letters if ch.lower() in _VN_DIACRITICS) / len(letters)
+    manh_cut = sum(1 for t in tokens if len(t) <= 2 and t.isalpha())
+    return ty_le_dau < 0.02 and manh_cut >= 3
 
 
 def _caps_titleish(line: str) -> bool:

@@ -22,7 +22,7 @@ from app.core.access import Identity, access_clause
 from app.core.courses import find_course
 from app.db import fetch_all, fetch_one, where_and
 from app.schemas import RouterResult
-from app.vn import ft_boolean_query, vn_norm
+from app.vn import ft_boolean_query, ft_phrase_queries, vn_norm
 
 # Thứ tự ưu tiên khi người hỏi không nêu loại tài liệu: cái học trước lên trước.
 DOC_TYPE_PRIORITY = (
@@ -67,6 +67,7 @@ def metadata_search(
     route: RouterResult,
     course: dict[str, Any] | None,
     limit: int = 10,
+    assistant_slug: str | None = None,
 ) -> list[dict[str, Any]]:
     """Nhánh A. Trả về [] khi câu hỏi không có tiêu chí lọc nào.
 
@@ -79,6 +80,10 @@ def metadata_search(
     acl_sql, acl_params = access_clause(identity, "d")
     conditions.append(acl_sql)
     params.update(acl_params)
+
+    assistant_sql = _assistant_condition(assistant_slug, params)
+    if assistant_sql:
+        conditions.append(assistant_sql.removeprefix("AND "))
 
     has_filter = False
 
@@ -119,7 +124,8 @@ def metadata_search(
 
 
 def title_search(
-    identity: Identity, question: str, limit: int = 10
+    identity: Identity, question: str, limit: int = 10,
+    assistant_slug: str | None = None,
 ) -> list[dict[str, Any]]:
     """Dự phòng khi nhánh A ra 0 kết quả: khớp toàn văn trên tiêu đề."""
     expression = ft_boolean_query(question, mode="or")
@@ -128,6 +134,7 @@ def title_search(
 
     acl_sql, params = access_clause(identity, "d")
     params.update({"q": expression, "limit": limit})
+    assistant_sql = _assistant_condition(assistant_slug, params)
 
     return fetch_all(
         f"""
@@ -137,12 +144,109 @@ def title_search(
         LEFT JOIN courses c ON c.id = d.course_id
         WHERE d.status = 'indexed'
           AND {acl_sql}
+          {assistant_sql}
           AND MATCH(d.title_norm) AGAINST (:q IN BOOLEAN MODE)
         ORDER BY score DESC, {_TYPE_ORDER_SQL}
         LIMIT :limit
         """,
         params,
     )
+
+
+# --- Khoanh vùng theo TRỢ LÝ ------------------------------------------------
+#
+# Bảng `assistant_documents` nói tài liệu nào thuộc bot nào. Quy tắc cố ý mềm:
+#
+#   bot ĐÃ gán tài liệu  -> chỉ đọc đúng những tài liệu đó
+#   bot CHƯA gán gì      -> đọc toàn kho (theo doc_types nếu có khai)
+#
+# Nhờ vế thứ hai, bật tính năng này không làm chết bot đang chạy: chưa gán thì
+# hành vi y như trước, gán tới đâu siết tới đó.
+#
+# Cache 60 giây để mỗi câu hỏi khỏi tốn thêm một lượt DB chỉ để hỏi "bot này có
+# gán tài liệu nào chưa".
+_ASSISTANT_SCOPE_TTL = 60.0
+# slug -> (thời điểm, có tài liệu gán riêng?, các mức quyền bot phục vụ)
+_assistant_scope_cache: dict[str, tuple[float, bool, tuple[str, ...]]] = {}
+
+
+def _assistant_scope(slug: str) -> tuple[bool, tuple[str, ...]]:
+    """Hai thứ quyết định phạm vi của bot, lấy trong một lượt DB và cache chung."""
+    import json
+    import time
+
+    from app.db import fetch_one
+
+    cached = _assistant_scope_cache.get(slug)
+    now = time.monotonic()
+    if cached and now - cached[0] < _ASSISTANT_SCOPE_TTL:
+        return cached[1], cached[2]
+
+    has_docs, levels = False, ()
+    try:
+        row = fetch_one(
+            """
+            SELECT a.access_levels AS levels,
+                   (SELECT COUNT(*) FROM assistant_documents ad
+                     WHERE ad.assistant_id = a.id) AS n
+            FROM assistants a WHERE a.slug = :slug
+            """,
+            {"slug": slug},
+        )
+        if row:
+            has_docs = int(row["n"] or 0) > 0
+            raw = row["levels"]
+            if isinstance(raw, str):
+                raw = json.loads(raw)
+            levels = tuple(str(x) for x in (raw or []) if x)
+    except Exception:
+        # Bảng chưa tạo / DB chớp tắt: coi như không khoanh vùng gì -> không
+        # siết oan, bot vẫn trả lời được.
+        pass
+
+    _assistant_scope_cache[slug] = (now, has_docs, levels)
+    return has_docs, levels
+
+
+def _assistant_has_documents(slug: str) -> bool:
+    return _assistant_scope(slug)[0]
+
+
+def clear_assistant_scope_cache() -> None:
+    _assistant_scope_cache.clear()
+
+
+def _assistant_condition(
+    assistant_slug: str | None, params: dict[str, Any], alias: str = "d"
+) -> str:
+    """Hai mệnh đề khoanh vùng theo bot, cùng nối bằng AND.
+
+    Cả hai chỉ THU HẸP. Mệnh đề quyền của người hỏi (access_clause) vẫn áp
+    riêng và không bao giờ bị nới ra bởi cấu hình bot — bot khai phục vụ mức
+    'staff' không làm sinh viên đọc được tài liệu staff.
+    """
+    if not assistant_slug:
+        return ""
+
+    has_docs, levels = _assistant_scope(assistant_slug)
+    parts = []
+
+    if has_docs:
+        params["assistant_slug"] = assistant_slug
+        parts.append(
+            f"AND EXISTS (SELECT 1 FROM assistant_documents ad "
+            f"JOIN assistants a ON a.id = ad.assistant_id "
+            f"WHERE ad.document_id = {alias}.id AND a.slug = :assistant_slug)"
+        )
+
+    if levels:
+        from app.db import in_clause
+
+        sql_in, level_params = in_clause("bot_access", list(levels))
+        params.update(level_params)
+        parts.append(f"AND {alias}.access IN ({sql_in})")
+
+    return " ".join(parts)
 
 
 def _scope_condition(
@@ -163,6 +267,29 @@ def _scope_condition(
     return f"AND ({alias}.course_id IN ({sql_in}) OR {alias}.course_id IS NULL)"
 
 
+def _interleave(
+    results: list[list[dict[str, Any]]], limit: int
+) -> list[dict[str, Any]]:
+    """Trộn nhiều danh sách đã xếp hạng: hạng 1 của mỗi danh sách trước, rồi
+    hạng 2... Điểm MATCH của hai truy vấn khác nhau không cùng thang đo nên
+    không gộp điểm được; xen kẽ theo THỨ HẠNG thì danh sách nào cũng có phần.
+    """
+    merged: list[dict[str, Any]] = []
+    seen: set = set()
+    for rank in range(max((len(r) for r in results), default=0)):
+        for ranked in results:
+            if rank >= len(ranked) or len(merged) >= limit:
+                continue
+            row = ranked[rank]
+            if row["chunk_id"] in seen:
+                continue
+            seen.add(row["chunk_id"])
+            merged.append(row)
+        if len(merged) >= limit:
+            break
+    return merged
+
+
 def chunk_search(
     identity: Identity,
     question: str,
@@ -171,6 +298,7 @@ def chunk_search(
     limit: int = 4,
     scope_course_ids=None,
     scope_doc_type: str | None = None,
+    assistant_slug: str | None = None,
 ) -> list[dict[str, Any]]:
     """Nhánh nội dung rút gọn của giai đoạn 1.
 
@@ -194,8 +322,15 @@ def chunk_search(
         course_condition += " AND d.type = :scope_type"
         params["scope_type"] = scope_doc_type
 
+    # Khoanh vùng theo bot — nối vào cùng chỗ với các điều kiện phạm vi khác.
+    course_condition += " " + _assistant_condition(assistant_slug, params)
+
+    # `is_fragment = 0`: bỏ các chunk là bảng số liệu đã vỡ định dạng khi trích
+    # xuất ("Mã ngành: 7480104 | Chỉ tiêu: 50 | 2 | 0 | 2 | 5 | 26,38 …"). Con
+    # số còn đó nhưng hàng/cột đã mất, nên gán số cho ngành nào cũng là bịa.
+    # Thà nói chưa có thông tin — xem ingest/context.py.
     sql = f"""
-        SELECT ch.id AS chunk_id, ch.content, ch.heading_path,
+        SELECT ch.id AS chunk_id, ch.content, ch.context_text, ch.heading_path,
                ch.page_from, ch.page_to,
                d.id AS document_id, d.title, d.type, d.semester, d.lecturer,
                d.file_path,
@@ -205,6 +340,7 @@ def chunk_search(
         JOIN documents d ON d.id = ch.document_id
         LEFT JOIN courses c ON c.id = d.course_id
         WHERE d.status = 'indexed'
+          AND ch.is_fragment = 0
           AND {acl_sql}
           {course_condition}
           AND MATCH(ch.content_norm) AGAINST (:q IN BOOLEAN MODE)
@@ -212,13 +348,34 @@ def chunk_search(
         LIMIT :limit
         """
 
-    # AND trước — chính xác cao ("quy chế cntt" phải chứa CẢ HAI); rỗng mới
-    # nới sang OR. Chạy OR ngay từ đầu thì từ phổ thông kiểu "môn" kéo về đủ
-    # thứ không liên quan, nhiễu đè lên tài liệu đúng.
-    for mode in ("and", "or"):
+    # Nới dần theo bậc, dừng ở bậc đầu tiên có kết quả.
+    #
+    # Bậc CỤM đứng đầu: đòi nguyên cụm khóa ("kinh te so"). Chính xác nhất, và
+    # là bậc duy nhất chống được điểm yếu cốt lõi của BOOLEAN MODE — xếp hạng
+    # theo SỐ từ khớp, không có IDF, nên âm tiết phổ thông nặng ngang âm tiết
+    # hiếm. Đây cũng là bậc gánh chính khi kênh vector chết vì nghẽn quota.
+    #
+    # Rồi tới AND (chính xác cao: "quy chế cntt" phải chứa CẢ HAI). Hai bậc
+    # *_content bỏ hư từ trước khi so: câu "ngành An toàn thông tin học những
+    # môn gì" trượt bậc AND chỉ vì chữ "gì" không có trong tài liệu, rồi rơi
+    # thẳng xuống OR — nơi "những/gì" khớp cả kho.
+    # Trong bậc CỤM thì chạy HẾT các cụm rồi trộn, chứ không dừng ở cụm đầu
+    # tiên có kết quả: "nhiều từ hơn" không có nghĩa là "đặc trưng hơn". Câu
+    # "ngành Bảo hiểm đào tạo ra sao" cho ra hai cụm — "chuong trinh dao tao"
+    # (4 từ) và "nganh bao hiem" (3 từ). Dừng ở cụm đầu là lấy nhầm cụm nói
+    # chung chung, kéo về chương trình của sáu ngành khác. Trộn cả hai rồi để
+    # tầng xếp hạng lại quyết định thì không phải đoán cụm nào đặc trưng.
+    phrases = ft_phrase_queries(keywords or ())
+    if phrases:
+        results = [fetch_all(sql, {**params, "q": p}) for p in phrases]
+        merged = _interleave(results, limit)
+        if merged:
+            return merged
+
+    for mode in ("and", "and_content", "or_content", "or"):
         expression = ft_boolean_query(source, mode=mode)
         if not expression:
-            return []
+            break
         rows = fetch_all(sql, {**params, "q": expression})
         if rows:
             return rows
@@ -232,6 +389,7 @@ def vector_search(
     limit: int = 20,
     scope_course_ids=None,
     scope_doc_type: str | None = None,
+    assistant_slug: str | None = None,
 ) -> list[dict[str, Any]]:
     """Kênh vector của hybrid retrieval — cú pháp Cloud SQL for MySQL.
 
@@ -257,9 +415,12 @@ def vector_search(
         course_condition += " AND d.type = :scope_type"
         params["scope_type"] = scope_doc_type
 
+    # Khoanh vùng theo bot — nối vào cùng chỗ với các điều kiện phạm vi khác.
+    course_condition += " " + _assistant_condition(assistant_slug, params)
+
     return fetch_all(
         f"""
-        SELECT ch.id AS chunk_id, ch.content, ch.heading_path,
+        SELECT ch.id AS chunk_id, ch.content, ch.context_text, ch.heading_path,
                ch.page_from, ch.page_to,
                d.id AS document_id, d.title, d.type, d.semester, d.lecturer,
                d.file_path,
@@ -270,6 +431,7 @@ def vector_search(
         LEFT JOIN courses c ON c.id = d.course_id
         WHERE d.status = 'indexed'
           AND ch.embedding IS NOT NULL
+          AND ch.is_fragment = 0
           AND {acl_sql}
           {course_condition}
         ORDER BY distance ASC
@@ -288,6 +450,7 @@ def hybrid_search(
     per_channel: int = 20,
     scope_course_ids=None,
     scope_doc_type: str | None = None,
+    assistant_slug: str | None = None,
 ) -> list[dict[str, Any]]:
     """Hai kênh song song (FULLTEXT + vector) → RRF. Chưa cắt top-K cuối —
     việc của rerank ở tầng trên."""
@@ -299,13 +462,18 @@ def hybrid_search(
         # Hai kênh độc lập — chạy song song, tiết kiệm một lượt khứ hồi DB
         # (đáng kể khi app và DB không cùng mạng, như máy dev nối Cloud SQL).
         with ThreadPoolExecutor(max_workers=2) as pool:
+            # Truyền theo TÊN chứ không theo vị trí: hai hàm này có tham số
+            # cuối khác nhau, và một lần thêm tham số mới mà quên sửa chỗ này
+            # là ranh giới bot rơi mất mà không ai báo lỗi.
             fulltext_future = pool.submit(
                 chunk_search, identity, question, keywords, course,
-                per_channel, scope_course_ids, scope_doc_type,
+                limit=per_channel, scope_course_ids=scope_course_ids,
+                scope_doc_type=scope_doc_type, assistant_slug=assistant_slug,
             )
             vector_future = pool.submit(
                 vector_search, identity, query_vector, course,
-                per_channel, scope_course_ids, scope_doc_type,
+                limit=per_channel, scope_course_ids=scope_course_ids,
+                scope_doc_type=scope_doc_type, assistant_slug=assistant_slug,
             )
             fulltext = fulltext_future.result()
             vectors = vector_future.result()
@@ -313,7 +481,7 @@ def hybrid_search(
         fulltext = chunk_search(
             identity, question, keywords, course,
             limit=per_channel, scope_course_ids=scope_course_ids,
-            scope_doc_type=scope_doc_type,
+            scope_doc_type=scope_doc_type, assistant_slug=assistant_slug,
         )
         vectors = []
 

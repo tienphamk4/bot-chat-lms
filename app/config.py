@@ -75,6 +75,12 @@ class Settings(BaseSettings):
     # Tầng 5 gán metadata khi nạp: Flash-Lite phân loại file mà 4 tầng máy móc
     # bó tay. Offline, ~100 token/file — tắt bằng INGEST_LLM_META=0.
     ingest_llm_meta: bool = True
+    # Gắn bối cảnh cho từng chunk khi nạp: mỗi TRANG một lượt Flash-Lite, đọc
+    # cả trang rồi mô tả từng chunk một dòng. Offline, ~0,02 USD cho tài liệu
+    # 83 trang. Đây là thứ cứu các chunk không tự nhắc chủ đề của mình (danh
+    # sách học phần không nêu tên ngành). Tắt bằng CHUNK_CONTEXT_LLM=0 —
+    # tầng bối cảnh cấu trúc miễn phí vẫn chạy.
+    chunk_context_llm: bool = True
 
     # --- Chi phí & quota (KT-10) ---
     quota_daily_tokens: int = 20_000
@@ -91,6 +97,12 @@ class Settings(BaseSettings):
     # Số chunk đưa vào prompt RAG. Thiết kế gốc 4; nâng 6 để câu trả lời tổng
     # quan đủ chất liệu (đi cùng trần output 800).
     content_limit: int = 6
+
+    # --- Đường liên hệ khi bot không trả lời được ---
+    # Để trống thì câu "không tìm thấy" giữ nguyên như cũ, không chèn gì thêm.
+    # KHÔNG đặt giá trị mặc định giả: một số hotline sai còn tệ hơn không có số.
+    contact_hotline: str = ""
+    contact_website: str = ""
 
     # --- Khác ---
     log_level: str = "INFO"

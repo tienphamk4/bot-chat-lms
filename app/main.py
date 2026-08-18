@@ -15,7 +15,9 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import admin, chat, courses, documents, feedback, health
+from app.api import (
+    admin, assistants, chat, courses, documents, feedback, health,
+)
 from app.config import get_settings
 from app.db import dispose_engine
 
@@ -102,6 +104,8 @@ if _cors:
 
 PREFIX = "/api/v1"
 app.include_router(chat.router, prefix=PREFIX)
+app.include_router(assistants.router, prefix=PREFIX)
+app.include_router(assistants.admin_router, prefix=PREFIX)
 app.include_router(documents.router, prefix=PREFIX)
 app.include_router(courses.router, prefix=PREFIX)
 app.include_router(feedback.router, prefix=PREFIX)
