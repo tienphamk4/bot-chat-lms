@@ -20,7 +20,7 @@ from sqlalchemy import text
 
 from app.config import get_settings
 from app.core import course_index
-from app.db import connection, fetch_one
+from app.db import connection, fetch_all, fetch_one
 from app.vn import vn_norm
 from ingest import chunk as chunker
 from ingest import extract as extractor
@@ -433,11 +433,49 @@ def reindex_document(document_id: int, files_root: Path) -> IngestResult:
     if not path.is_file():
         return IngestResult(document_id, "failed", f"file không còn: {row['file_path']}")
 
-    # Xóa bản ghi cũ để ingest_file chạy như nạp mới (checksum có thể đã đổi).
+    return replace_document(document_id, path, files_root)
+
+
+def replace_document(
+    document_id: int,
+    path: Path,
+    files_root: Path,
+    extraction_override: "extractor.Extraction | None" = None,
+) -> IngestResult:
+    """Xóa bản ghi cũ rồi nạp lại file — GIỮ danh sách trợ lý được gán.
+
+    Cả nạp lại lẫn OCR đều đi qua đây. Xóa-rồi-tạo-mới nghĩa là document_id
+    đổi, và các dòng `assistant_documents` bị cascade xóa theo. Hậu quả im
+    lặng: bot mất sạch tài liệu được gán, nhưng quy tắc "chưa gán thì đọc toàn
+    kho" lại làm nó vẫn trả lời được — chỉ là trả lời từ kho của bot khác.
+    Không có lỗi nào báo, và ranh giới giữa các trợ lý biến mất.
+    """
+    assistants = [
+        int(r["assistant_id"])
+        for r in (
+            fetch_all(
+                "SELECT assistant_id FROM assistant_documents WHERE document_id = :id",
+                {"id": document_id},
+            )
+            or []
+        )
+    ]
+
     with connection() as conn:
         conn.execute(text("DELETE FROM documents WHERE id = :id"), {"id": document_id})
 
-    return ingest_file(path, files_root)
+    result = ingest_file(path, files_root, extraction_override=extraction_override)
+
+    if assistants and result.document_id:
+        with connection() as conn:
+            conn.execute(
+                text(
+                    "INSERT IGNORE INTO assistant_documents (assistant_id, document_id)"
+                    " VALUES (:a, :d)"
+                ),
+                [{"a": a, "d": result.document_id} for a in assistants],
+            )
+    return result
 
 
 def _resolve_course(course_code: str | None) -> tuple[int | None, int | None]:

@@ -18,7 +18,7 @@ from pathlib import Path
 from app.config import get_settings
 from app.db import fetch_one
 from ingest.extract import Extraction, Page
-from ingest.loader import IngestResult, ingest_file
+from ingest.loader import IngestResult
 
 log = logging.getLogger(__name__)
 
@@ -112,16 +112,11 @@ def ocr_document(
 
     extraction = Extraction(pages=pages, page_count=len(pages))
 
-    # Xóa bản ghi cũ rồi nạp lại với văn bản OCR — cùng đường với reindex.
-    from app.db import connection
-    from sqlalchemy import text as sql_text
+    # Xóa bản ghi cũ rồi nạp lại với văn bản OCR — cùng đường với reindex,
+    # kể cả việc giữ lại danh sách trợ lý được gán.
+    from ingest.loader import replace_document
 
-    with connection() as conn:
-        conn.execute(
-            sql_text("DELETE FROM documents WHERE id = :id"), {"id": document_id}
-        )
-
-    result = ingest_file(path, root, extraction_override=extraction)
+    result = replace_document(document_id, path, root, extraction_override=extraction)
 
     from app.core import cache
 

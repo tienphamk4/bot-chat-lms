@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter, defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from app.vn import vn_norm
@@ -95,6 +95,8 @@ class _Line:
     y1: float
     height: float        # chiều cao trang chứa dòng
     block: int           # chỉ số block trong trang (để ngắt đoạn)
+    x0: float = 0.0      # mép trái — dùng để nhận ra trang dàn nhiều cột
+    x1: float = 0.0      # mép phải
 
     @property
     def in_margin(self) -> bool:
@@ -217,12 +219,135 @@ def _collect_pdf_lines(path: Path) -> tuple[list[list[_Line]], int]:
                             bold=any(int(s.get("flags", 0)) & _BOLD_FLAG for s in spans),
                             y0=float(bbox[1]),
                             y1=float(bbox[3]),
+                            x0=float(bbox[0]),
+                            x1=float(bbox[2]),
                             height=height,
                             block=block_index,
                         )
                     )
-            page_lines.append(lines)
+            # Sắp lại theo cột NGAY tại đây: mọi bước sau (đo cỡ chữ thân
+            # bài, lột header/footer, dựng trang, chia chunk) đều đọc từ danh
+            # sách này, nên sửa một chỗ là cả đường ống đúng theo.
+            page_lines.append(order_by_columns(lines, float(page.rect.width)))
     return page_lines, raw_chars
+
+
+# --- Trang dàn nhiều cột ----------------------------------------------------
+#
+# Đọc tuyến tính (trên xuống dưới, trái sang phải) trộn các cột vào nhau, và
+# hậu quả không phải là văn bản khó đọc mà là DỮ LIỆU SAI. Ca thật, trang 10
+# tài liệu tuyển sinh — ba cột, mỗi cột một ngành:
+#
+#     cột 1 (x≈22)          cột 2 (x≈442)        cột 3 (x≈820)
+#     HỆ THỐNG THÔNG TIN    KINH TẾ SỐ           HỆ THỐNG THÔNG TIN
+#     QUẢN LÝ
+#     Chỉ tiêu: 100         Mã ngành: 7310109    Chỉ tiêu: 50
+#     Mã ngành: 7340405                          Mã ngành: 7480104
+#
+# Nối tuyến tính thì "Mã ngành: 7310109" (cột 2, Kinh tế số) đứng ngay cạnh
+# "HỆ THỐNG THÔNG TIN QUẢN LÝ" (cột 1), và bot trả lời mã ngành của ngành này
+# cho ngành kia — nghe rất chắc chắn, người hỏi không có cách nào nhận ra.
+#
+# Cách nhận cột: chiếu mọi dòng xuống trục ngang rồi tìm RÃNH TRỐNG chạy suốt
+# chiều cao trang. Chiếu chứ không gom theo x0, vì gom theo mép trái thì một
+# dòng thụt đầu dòng đã thành "cột" riêng.
+
+_COL_BINS = 240             # độ phân giải khi chiếu xuống trục ngang
+_MIN_GUTTER_RATIO = 0.025   # rãnh hẹp hơn 2,5% bề ngang trang là khoảng cách chữ
+_MIN_LINES_PER_COL = 3      # ít hơn thì đó là chú thích lạc, không phải cột
+_MIN_COLUMN_RATIO = 0.08    # cột hẹp hơn 8% bề ngang trang: bỏ qua
+
+
+def _column_ranges(lines: list[_Line], width: float) -> list[tuple[float, float]]:
+    """Các khoảng [x_trái, x_phải] của từng cột. Rỗng = trang một cột.
+
+    Dòng nằm ở lề trên/dưới bị loại khỏi phép đo: header và footer thường chạy
+    suốt bề ngang trang và sẽ bịt mất mọi rãnh, làm trang ba cột trông như một
+    cột.
+    """
+    body = [ln for ln in lines if not ln.in_margin and ln.x1 > ln.x0]
+    if len(body) < _MIN_LINES_PER_COL * 2 or width <= 0:
+        return []
+
+    step = width / _COL_BINS
+    filled = bytearray(_COL_BINS)
+    for line in body:
+        start = max(0, min(_COL_BINS - 1, int(line.x0 / step)))
+        end = max(0, min(_COL_BINS - 1, int(line.x1 / step)))
+        for index in range(start, end + 1):
+            filled[index] = 1
+
+    # Gom các ô liền nhau CÓ chữ thành từng cột ứng viên.
+    spans: list[tuple[int, int]] = []
+    index = 0
+    while index < _COL_BINS:
+        if not filled[index]:
+            index += 1
+            continue
+        start = index
+        while index < _COL_BINS and filled[index]:
+            index += 1
+        spans.append((start, index - 1))
+
+    min_gutter = max(1, int(_MIN_GUTTER_RATIO * _COL_BINS))
+    merged: list[tuple[int, int]] = []
+    for span in spans:
+        if merged and span[0] - merged[-1][1] - 1 < min_gutter:
+            merged[-1] = (merged[-1][0], span[1])  # rãnh quá hẹp: cùng một cột
+        else:
+            merged.append(span)
+
+    if len(merged) < 2:
+        return []
+
+    ranges = [
+        (start * step, (end + 1) * step)
+        for start, end in merged
+        if (end + 1 - start) * step >= _MIN_COLUMN_RATIO * width
+    ]
+    if len(ranges) < 2:
+        return []
+
+    # Cột nào quá ít dòng thì cả trang không đáng coi là nhiều cột — thà đọc
+    # tuyến tính còn hơn cắt nhầm một trang văn xuôi bình thường.
+    for left, right in ranges:
+        count = sum(1 for ln in body if left <= (ln.x0 + ln.x1) / 2 < right)
+        if count < _MIN_LINES_PER_COL:
+            return []
+    return ranges
+
+
+def order_by_columns(lines: list[_Line], width: float) -> list[_Line]:
+    """Sắp lại dòng theo CỘT: hết cột trái mới sang cột phải.
+
+    Trang một cột trả về nguyên trạng, không đụng gì.
+    """
+    ranges = _column_ranges(lines, width)
+    if not ranges:
+        return lines
+
+    # Xếp MỌI dòng vào cột theo tâm ngang, kể cả dòng nằm ở vùng lề. Dòng lề
+    # bị loại khỏi phép ĐO rãnh (header/footer chạy ngang trang sẽ bịt rãnh),
+    # nhưng không được loại khỏi phép XẾP: trong tài liệu quảng bá, tên ngành
+    # in to nằm ngay đỉnh trang — tức trong vùng lề — và đẩy nó xuống cuối là
+    # tách tên ngành khỏi đúng cột của nó, hỏng lại đúng thứ vừa sửa.
+    # Header/footer thật vẫn bị lột sau đó theo vân tay lặp.
+    buckets: list[list[_Line]] = [[] for _ in ranges]
+    for line in lines:
+        center = (line.x0 + line.x1) / 2
+        slot = next(
+            (i for i, (left, right) in enumerate(ranges) if left <= center < right),
+            len(ranges) - 1,
+        )
+        buckets[slot].append(line)
+
+    ordered: list[_Line] = []
+    for column, bucket in enumerate(buckets):
+        for line in sorted(bucket, key=lambda ln: (ln.y0, ln.x0)):
+            # Ép mỗi cột thành một dải block riêng: chuyển cột luôn là ranh
+            # giới đoạn, không bao giờ dính chữ của hai ngành vào một đoạn.
+            ordered.append(replace(line, block=column * 100_000 + line.block))
+    return ordered
 
 
 def _body_font_size(page_lines: list[list[_Line]]) -> float:

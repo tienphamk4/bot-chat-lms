@@ -22,6 +22,17 @@ log = logging.getLogger(__name__)
 # Giới hạn của API embed theo lô; cũng là cỡ lô thiết kế chọn (mục 4 CLAUDE.md).
 BATCH_SIZE = 100
 
+# Số lượt gọi embedding chạy song song.
+#
+# `gemini-embedding-2` trả về ĐÚNG MỘT vector dù gửi bao nhiêu văn bản trong
+# `contents` — âm thầm bỏ phần còn lại, không lỗi, không cảnh báo. Gửi 100
+# chunk nhận về 1 vector; chốt kiểm độ dài ở `ingest.loader.embed_pending` là
+# thứ duy nhất chặn được việc gán nhầm vector cho 99 chunk kia.
+#
+# Nên mỗi lượt gọi chỉ một văn bản, và bù tốc độ bằng chạy song song. Hạn mức
+# của model này là 6000 request/phút nên 12 luồng không chạm trần.
+EMBED_CONCURRENCY = 12
+
 TASK_DOCUMENT = "RETRIEVAL_DOCUMENT"
 TASK_QUERY = "RETRIEVAL_QUERY"
 
@@ -69,37 +80,48 @@ def embed_texts(
     client = vertex.get_client(location=settings.embed_location)
     if client is None:
         return None
-    try:
-        from google.genai import types
 
-        from app.llm.vertex import _http_options
+    from concurrent.futures import ThreadPoolExecutor
 
+    from google.genai import types
+
+    from app.llm.vertex import _http_options
+
+    config = types.EmbedContentConfig(
+        task_type=task_type,
+        output_dimensionality=settings.embed_dim,
+        http_options=_http_options(
+            timeout_seconds or settings.llm_timeout_seconds, attempts=attempts
+        ),
+    )
+
+    def one(text: str):
+        """Đúng MỘT văn bản mỗi lượt gọi — xem ghi chú EMBED_CONCURRENCY."""
         response = client.models.embed_content(
-            model=settings.embed_model,
-            contents=texts,
-            config=types.EmbedContentConfig(
-                task_type=task_type,
-                output_dimensionality=settings.embed_dim,
-                http_options=_http_options(
-                    timeout_seconds or settings.llm_timeout_seconds, attempts=attempts
-                ),
-            ),
+            model=settings.embed_model, contents=[text], config=config
         )
+        embedding = response.embeddings[0]
+        stats = getattr(embedding, "statistics", None)
+        count = getattr(stats, "token_count", None) if stats else None
+        return (
+            normalize(list(embedding.values)),
+            int(count) if count else max(1, len(text) // 4),
+        )
+
+    try:
+        if len(texts) == 1:
+            results = [one(texts[0])]
+        else:
+            with ThreadPoolExecutor(max_workers=EMBED_CONCURRENCY) as pool:
+                results = list(pool.map(one, texts))
     except Exception as exc:  # pragma: no cover - phụ thuộc mạng
         log.warning("Embed thất bại (%d văn bản): %s", len(texts), exc)
         return None
 
-    vectors = [normalize(list(e.values)) for e in response.embeddings]
-
-    # Vertex trả token_count trong statistics từng embedding; thiếu thì ước
-    # lượng thô 4 ký tự/token — chỉ phục vụ ghi chi phí, không cần chính xác.
-    tokens = 0
-    for embedding, text in zip(response.embeddings, texts):
-        stats = getattr(embedding, "statistics", None)
-        count = getattr(stats, "token_count", None) if stats else None
-        tokens += int(count) if count else max(1, len(text) // 4)
-
-    return EmbedBatch(vectors=vectors, tokens=tokens)
+    return EmbedBatch(
+        vectors=[vector for vector, _ in results],
+        tokens=sum(count for _, count in results),
+    )
 
 
 # Cache embedding câu hỏi trong tiến trình — câu lặp lại khỏi tốn một lượt
