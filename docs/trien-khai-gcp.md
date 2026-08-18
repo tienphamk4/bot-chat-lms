@@ -561,6 +561,7 @@ Hai việc còn nợ, không gấp nhưng nên làm:
 
 | Triệu chứng | Nguyên nhân thường gặp | Cách xử lý |
 |---|---|---|
+| Deploy đỏ ở bước **Chép gói lên VM**: `Broken pipe` / `scp: Connection closed` / `exit code 255` | VM bị dừng hoặc khởi động lại giữa lúc CI đang chép — hay gặp nhất là khi đổi `machine-type`, vì thao tác đó bắt buộc stop/start | Đợi VM `RUNNING` và `/readyz` trả 200 rồi chạy lại workflow. **Đừng đụng vào VM khi Actions đang chạy**: hai việc này không biết nhau, và scp đứt nửa chừng để lại gói dở trong `/tmp` chứ không tự dọn |
 | `/readyz` trả `degraded` | Sai mật khẩu trong `DB_DSN`, hoặc proxy chết | `journalctl -u edu-docbot -n 30` và `journalctl -u cloud-sql-proxy -n 30` |
 | `cloud-sql-proxy` không lên | Sai `CONNECTION_NAME`, hoặc thiếu `roles/cloudsql.client` | Kiểm tra lại A1 và A4 |
 | Service chết ngay khi start, log báo `ModuleNotFoundError: app` | `WorkingDirectory` trỏ vào `/srv/edu-docbot/app` | Phải là `/srv/edu-docbot` — đã sửa trong `deploy/edu-docbot.service` |
