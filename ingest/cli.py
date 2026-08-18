@@ -59,6 +59,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     renorm.add_argument("--dry-run", action="store_true", help="chỉ đếm, không ghi")
 
+    subparsers.add_parser(
+        "reembed-all",
+        help="xóa mọi vector rồi nhúng lại — BẮT BUỘC sau khi đổi embed_model",
+    )
+
     backfill = subparsers.add_parser(
         "backfill-context",
         help="gắn bối cảnh cho chunk đã nạp (009) — không phải nạp lại file",
@@ -122,6 +127,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if result.status == "indexed" else 1
     if args.command == "renorm":
         return _renorm(dry_run=args.dry_run)
+    if args.command == "reembed-all":
+        return _reembed_all()
     if args.command == "backfill-context":
         return _backfill_context(
             doc_id=args.doc_id, use_llm=not args.no_llm, dry_run=args.dry_run
@@ -520,6 +527,10 @@ def _backfill_context(
         )
         payload = []
         for row, ctx in zip(rows, contexts):
+            # Cắt các chuỗi số mồ côi NGAY TRONG `content`: chúng vô nghĩa ở
+            # mọi nơi dùng tới (prompt, embedding, FULLTEXT, trích dẫn hiện
+            # cho người đọc), nên sửa một chỗ rồi cả đường ống dùng chung.
+            clean = chunk_context.strip_fragments(row["content"])
             flag = int(chunk_context.is_fragmented(row["content"]))
             fragments += flag
             payload.append(
@@ -527,7 +538,8 @@ def _backfill_context(
                     "id": row["id"],
                     "ctx": ctx or None,
                     "flag": flag,
-                    "norm": vn_norm(chunk_context.indexed_text(ctx, row["content"])),
+                    "clean": clean,
+                    "norm": vn_norm(chunk_context.indexed_text(ctx, clean)),
                 }
             )
         total += len(payload)
@@ -541,7 +553,8 @@ def _backfill_context(
                     """
                     UPDATE document_chunks
                        SET context_text = :ctx, is_fragment = :flag,
-                           content_norm = :norm, embedding = NULL
+                           content = :clean, content_norm = :norm,
+                           embedding = NULL
                      WHERE id = :id
                     """
                 ),
@@ -555,6 +568,45 @@ def _backfill_context(
         " (dry-run)" if dry_run else "",
         fragments,
     )
+    return 0
+
+
+def _reembed_all() -> int:
+    """Xóa sạch vector rồi nhúng lại toàn kho bằng model đang cấu hình.
+
+    Bắt buộc sau khi đổi `embed_model` hoặc `embed_dim`. Vector của hai model
+    khác nhau nằm ở hai không gian khác nhau — trộn lẫn thì cosine_distance
+    vẫn trả về một con số trông hợp lý, truy hồi vẫn chạy, chỉ là kết quả sai.
+    Không có lỗi nào báo, nên phải chủ động xóa hết chứ không nhúng bù.
+    """
+    from sqlalchemy import text as sql_text
+
+    from app.config import get_settings
+    from app.db import connection, fetch_value
+    from ingest.loader import embed_pending
+
+    settings = get_settings()
+    total = fetch_value("SELECT COUNT(*) FROM document_chunks") or 0
+    log.info(
+        "Nhúng lại %d chunk bằng %s @ %s (dim %d)",
+        total, settings.embed_model, settings.embed_location, settings.embed_dim,
+    )
+    with connection() as conn:
+        conn.execute(sql_text("UPDATE document_chunks SET embedding = NULL"))
+
+    done = 0
+    while True:
+        result = embed_pending()
+        if result.get("skipped") or not result.get("embedded"):
+            break
+        done += result["embedded"]
+        log.info("  %d/%d", done, total)
+
+    left = fetch_value("SELECT COUNT(*) FROM document_chunks WHERE embedding IS NULL") or 0
+    if left:
+        log.error("Còn %d chunk CHƯA có vector — chạy lại `embed` cho hết", left)
+        return 1
+    log.info("Xong: %d/%d chunk đã có vector mới", done, total)
     return 0
 
 

@@ -53,12 +53,23 @@ class Settings(BaseSettings):
 
     # --- Giai đoạn 2: RAG ---
     # Đổi embed_model/embed_dim = re-embed toàn bộ. Quyết một lần (KT-08).
-    embed_model: str = "gemini-embedding-001"
+    embed_model: str = Field("gemini-embedding-2", validation_alias="EMBED_MODEL")
     embed_dim: int = 768
-    # Embedding có location RIÊNG: gemini-embedding-001 không phục vụ ở
-    # 'global' (đo 13/08: treo tới timeout), trong khi 3.5-flash-lite chỉ có ở
-    # 'global'. Hai model hai nơi — hai client.
-    embed_location: str = Field("us-central1", validation_alias="EMBED_LOCATION")
+    # Embedding có location RIÊNG với model sinh — nhưng nay CẢ HAI đều ở
+    # 'global'.
+    #
+    # Vì sao đổi (đo 18/08, nghẽn quota là rủi ro vận hành số 1 của dự án):
+    # base model `gemini-embedding` chỉ được 5 request/phút ở us-central1, tức
+    # toàn hệ thống trần 5 câu hỏi/phút — mỗi câu cần đúng một lần nhúng. Xin
+    # nâng hạn mức bị Google từ chối tự động ("'5' was granted"). Base model
+    # `gemini-embedding-2` ở điểm cuối 'global' có 6000 request/phút và 5 triệu
+    # token/phút. Đo thật: 40 lệnh song song, 0 lỗi, 1,6 giây — trong khi
+    # gemini-embedding-001 ở us-central1 hỏng 13/14 lệnh.
+    #
+    # ĐỔI HAI TRƯỜNG NÀY = PHẢI NHÚNG LẠI TOÀN BỘ KHO (KT-08). Vector của hai
+    # model khác nhau không so sánh được với nhau; trộn lẫn là truy hồi sai mà
+    # không có lỗi nào báo. Lệnh: `ingest.cli reembed-all`.
+    embed_location: str = Field("global", validation_alias="EMBED_LOCATION")
     gen_model: str = "gemini-2.5-flash-lite"  # sinh trả lời; escalate là việc GĐ3
     # Model dự phòng khi gen_model nghẽn quota (429): mỗi base model một hàng
     # đợi quota riêng nên chuyển làn là thoát. Trống = tắt.

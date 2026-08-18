@@ -390,12 +390,14 @@ def ingest_file(
                 {
                     "document_id": document_id,
                     "chunk_index": piece.index,
-                    "content": piece.content,
+                    # Cắt chuỗi số mồ côi ngay khi ghi: bảng vỡ định dạng thì
+                    # con số đã mất hàng/cột, giữ lại chỉ mời model bịa.
+                    "content": chunk_context.strip_fragments(piece.content),
                     # FULLTEXT khớp trên văn bản ĐÃ kèm bối cảnh — đó là điểm
                     # mấu chốt: chunk "HỌC PHẦN CHUNG: Lập trình Python…" giờ
                     # khớp được câu hỏi có chữ "An toàn thông tin".
                     "content_norm": vn_norm(
-                        chunk_context.indexed_text(ctx, piece.content)
+                        chunk_context.indexed_text(ctx, chunk_context.strip_fragments(piece.content))
                     ),
                     "context_text": ctx or None,
                     "is_fragment": int(chunk_context.is_fragmented(piece.content)),

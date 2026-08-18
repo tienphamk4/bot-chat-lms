@@ -10,20 +10,43 @@ from ingest import context as C
 
 
 class TestBangVoDinhDang:
-    """Bảng bị bẹp thành dòng chữ thì không còn suy ra được số của ai."""
+    """Bảng bị bẹp thành dòng chữ thì không còn suy ra được số của ai.
 
-    def test_bang_diem_chuan_that_bi_bat(self):
-        # Nguyên văn chunk 1966, trang 10: "2 0 2 5" vốn là năm 2025, "26,38"
-        # là điểm chuẩn — nhưng đã mất hàng/cột nên không biết của ngành nào.
-        raw = (
-            "Mã ngành: 7480104 Chỉ tiêu tuyển sinh: 50 "
-            "2 0 2 5 26,38 2 0 2 4 * 35,94 Điểm chuẩn THPTQG"
-        )
+    Nhưng cắt theo CHUỖI chứ không loại cả chunk: chunk trang 10 chứa đồng
+    thời "Mã ngành: 7310109" sạch sẽ và dãy điểm chuẩn đã mất hàng/cột. Loại
+    cả chunk thì người hỏi mã ngành cũng nhận "chưa có thông tin" — người dùng
+    đã báo đúng ca này.
+    """
+
+    # Nguyên văn chunk 1966, trang 10: "2 0 2 5" vốn là năm 2025, "26,38" là
+    # điểm chuẩn — nhưng đã mất hàng/cột nên không biết của ngành nào.
+    TRANG_10 = (
+        "Mã ngành: 7480104 Chỉ tiêu tuyển sinh: 50 "
+        "2 0 2 5 26,38 2 0 2 4 * 35,94 Điểm chuẩn THPTQG "
+        "Mã ngành: 7310109 Chỉ tiêu tuyển sinh: 50 HỆ THỐNG THÔNG TIN QUẢN LÝ"
+    )
+
+    def test_cat_day_so_mat_hang_cot(self):
+        got = C.strip_fragments(self.TRANG_10)
+        assert "26,38" not in got and "35,94" not in got
+
+    def test_giu_ma_nganh_va_chi_tieu(self):
+        got = C.strip_fragments(self.TRANG_10)
+        assert "Mã ngành: 7310109" in got
+        assert "Mã ngành: 7480104" in got
+        # Số đứng ngay sau nhãn là GIÁ TRỊ của nhãn, không phải ô bảng mồ côi.
+        assert "Chỉ tiêu tuyển sinh: 50" in got
+
+    def test_chunk_van_dung_duoc_nen_khong_bi_loai(self):
+        assert not C.is_fragmented(self.TRANG_10)
+
+    def test_chunk_chi_toan_so_thi_bi_loai(self):
+        raw = "Điểm chuẩn 55 25,25 26,50 26,42 55 55 55 160 160 105 160 325 270"
         assert C.is_fragmented(raw)
 
-    def test_bang_tong_hop_chi_tieu_bi_bat(self):
-        raw = "Tổng chỉ tiêu: 1900 MÃ XÉT TUYỂN CHỈ TIÊU 55 25,25 26,50 26,42 55 55 55 160 160 105"
-        assert C.is_fragmented(raw)
+    def test_khong_dung_toi_van_ban_khong_co_bang(self):
+        raw = "Ngành An toàn thông tin đào tạo chuyên gia bảo mật."
+        assert C.strip_fragments(raw) == raw
 
     def test_danh_sach_mon_hoc_danh_so_khong_bi_bat(self):
         # Liệt kê có đánh số là văn bản BÌNH THƯỜNG — bắt nhầm thì mất sạch

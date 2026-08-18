@@ -61,15 +61,60 @@ def fragment_run(content: str) -> int:
     return longest
 
 
+def strip_fragments(content: str) -> str:
+    """Cắt các CHUỖI token mồ côi, giữ nguyên phần còn lại.
+
+    Loại cả chunk là quá tay, và đã sai thật: chunk trang 10 chứa đồng thời
+    "Mã ngành: 7310109", "Chỉ tiêu tuyển sinh: 50" — hai cặp nhãn–giá trị hoàn
+    toàn sạch — lẫn dãy "2 0 2 5 26,38 2 0 2 4 * 35,94" là bảng điểm chuẩn đã
+    mất hàng/cột. Vứt cả chunk là người hỏi mã ngành cũng nhận "chưa có thông
+    tin", trong khi con số ấy nằm ngay đó, đọc được bằng mắt.
+
+    Cắt theo chuỗi thì phần nhãn–giá trị sống, phần không còn suy ra được ai
+    thuộc về ai thì biến mất. Năm trong bảy chunk từng bị loại hóa ra chỉ dính
+    đuôi số trang của mục lục — nay chúng giữ nguyên toàn bộ tên ngành.
+    """
+    out: list[str] = []
+    run: list[str] = []
+
+    def flush() -> None:
+        if len(run) < FRAGMENT_RUN:
+            out.extend(run)
+        elif out and out[-1].endswith(":"):
+            # Số đứng ngay sau một NHÃN là giá trị của nhãn đó, không phải ô
+            # bảng mồ côi: "Chỉ tiêu tuyển sinh: 50 | 2 | 0 | 2 | 5 | 26,38…".
+            # Giữ đúng một token đầu thì "50" sống, phần còn lại vẫn bị cắt.
+            out.append(run[0])
+        run.clear()
+
+    for token in content.split():
+        if _LONE_TOKEN.fullmatch(token):
+            run.append(token)
+            continue
+        flush()
+        out.append(token)
+    flush()
+    return " ".join(out)
+
+
+# Cắt xong mà còn dưới ngần này ký tự chữ thì chunk vốn CHỈ là bảng số — không
+# còn gì để trả lời, giữ lại chỉ tổ chiếm suất trong prompt.
+MIN_TEXT_AFTER_STRIP = 80
+
+
 def is_fragmented(content: str) -> bool:
-    """Chunk này có phải bảng số liệu đã vỡ định dạng không?
+    """Chunk này CHỈ còn là bảng số đã vỡ định dạng, cắt xong không còn gì?
 
     Vỡ định dạng nghĩa là các con số còn đó nhưng đã mất hàng/cột, nên KHÔNG
     còn suy ra được số nào thuộc về ai. Trả lời từ chunk kiểu này không phải
     "trả lời gần đúng" mà là bịa: điểm chuẩn của ngành A gán cho ngành B.
-    Thà nói chưa có thông tin.
+
+    Nhưng chỉ loại khi cắt xong CHẲNG CÒN GÌ — còn chữ thì phần chữ ấy vẫn
+    đáng trả lời.
     """
-    return fragment_run(content) >= FRAGMENT_RUN
+    if fragment_run(content) < FRAGMENT_RUN:
+        return False  # không có bảng vỡ nào; chunk ngắn cũng là chunk hợp lệ
+    return len(strip_fragments(content).strip()) < MIN_TEXT_AFTER_STRIP
 
 
 # ------------------------------------------------------------ tầng cấu trúc
