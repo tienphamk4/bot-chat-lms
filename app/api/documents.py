@@ -69,6 +69,7 @@ async def preview_document(
     document_id: int,
     identity: CurrentIdentity,
     uid: int | None = Query(None, ge=1),
+    page: int | None = Query(None, ge=1),
 ):
     """Xem trước inline cho popup trích dẫn — PDF render thẳng trong iframe,
     nhảy trang bằng fragment #page=N phía client.
@@ -99,6 +100,25 @@ async def preview_document(
         if not converted.is_file():
             raise HTTPException(status_code=404)
         relative_path = f"previews/{document_id}.pdf"
+
+    # Chỉ gửi VÀI TRANG quanh chỗ được trích, không gửi cả tệp.
+    #
+    # Popup trích dẫn nhúng PDF vào iframe. Tài liệu quảng bá 83 trang nặng
+    # 26,8 MB, nên mỗi lần bấm một trích dẫn là đẩy đi 26,8 MB chỉ để hiện MỘT
+    # trang — popup trắng vài giây rồi mới hiện, người dùng đọc là "lỗi".
+    # Lát ba trang chỉ 0,46 MB. Lát được cache trên đĩa nên lần sau miễn phí.
+    if page is not None:
+        from ingest.preview import build_slice, slice_path, slice_range
+
+        source = (settings.files_root / relative_path).resolve()
+        # Đã xin lát thì LUÔN cắt, kể cả tệp nhỏ. Client tự tính số trang bên
+        # trong lát; nếu máy chủ tùy nghi lúc cắt lúc không thì phép tính đó
+        # sai mà client không có cách nào biết (iframe không đọc được header).
+        if source.is_file():
+            start, end = slice_range(page, int(row.get("page_count") or 0))
+            target = slice_path(settings.files_root, document_id, start, end)
+            if build_slice(source, target, start, end):
+                relative_path = f"previews/{target.name}"
 
     absolute = (settings.files_root / relative_path).resolve()
     root = settings.files_root.resolve()

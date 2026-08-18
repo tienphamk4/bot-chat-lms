@@ -54,8 +54,16 @@ function openPreview(c, getHeaders) {
          <div class="pv-snip-text">${esc(c.snippet)}</div>
        </div>`
     : '';
+  // Xin máy chủ LÁT vài trang quanh chỗ trích thay vì cả tệp: tài liệu 83
+  // trang nặng 26,8 MB, lát ba trang chỉ 0,46 MB. Máy chủ cắt từ trang
+  // (page-1) nên trong lát, trang cần xem nằm ở vị trí thứ 2 (hoặc thứ 1 khi
+  // chỗ trích ở ngay trang đầu). Máy chủ LUÔN cắt khi có tham số page, nên
+  // phép tính này không bao giờ lệch.
+  const sliceStart = Math.max(1, page - 1);
+  const localPage = page - sliceStart + 1;
+  const query = [uid ? `uid=${uid}` : '', `page=${page}`].filter(Boolean).join('&');
   const frameUrl = c.preview_url
-    ? `${c.preview_url}${uid ? `?uid=${uid}` : ''}#page=${page}&navpanes=0&zoom=page-width`
+    ? `${c.preview_url}?${query}#page=${localPage}&navpanes=0&zoom=page-width`
     : null;
   const frame = frameUrl
     ? `<iframe class="pv-frame" src="${frameUrl}"></iframe>`

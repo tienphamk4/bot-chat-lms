@@ -59,6 +59,51 @@ def preview_path(files_root: Path, document_id: int) -> Path:
     return previews_dir(files_root) / f"{document_id}.pdf"
 
 
+# Số trang lấy thêm mỗi bên chỗ được trích. ±1 cho ba trang — đủ để đọc ngữ
+# cảnh hai bên mà vẫn nhẹ. Đo trên tài liệu tuyển sinh: cả tệp 26,8 MB (83
+# trang), lát ba trang 0,46 MB, lát năm trang 1,98 MB.
+PREVIEW_SPAN = 1
+
+
+def slice_path(files_root: Path, document_id: int, start: int, end: int) -> Path:
+    return previews_dir(files_root) / f"{document_id}-p{start}-{end}.pdf"
+
+
+def slice_range(page: int, page_count: int, span: int = PREVIEW_SPAN) -> tuple[int, int]:
+    """Khoảng trang (1-based, đã kẹp trong tài liệu) quanh trang được trích."""
+    start = max(1, page - span)
+    end = min(page_count, page + span) if page_count else page + span
+    return start, max(start, end)
+
+
+def build_slice(source: Path, target: Path, start: int, end: int) -> bool:
+    """Cắt các trang [start, end] của `source` thành một PDF nhỏ, có cache.
+
+    Vì sao cần: popup trích dẫn nhúng cả tệp gốc vào iframe. Với tài liệu
+    quảng bá 83 trang nặng 26,8 MB, mỗi lần người dùng bấm một trích dẫn là
+    máy chủ đẩy đi 26,8 MB chỉ để hiện MỘT trang — trên máy nhỏ thì popup
+    trắng vài giây rồi mới hiện, trông y như hỏng.
+    """
+    if target.is_file() and target.stat().st_size > 0:
+        return True
+    try:
+        import pymupdf
+
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with pymupdf.open(source) as document:
+            if document.page_count == 0:
+                return False
+            first = max(0, min(document.page_count - 1, start - 1))
+            last = max(first, min(document.page_count - 1, end - 1))
+            with pymupdf.open() as sliced:
+                sliced.insert_pdf(document, from_page=first, to_page=last)
+                sliced.save(target, garbage=3, deflate=True)
+        return target.is_file() and target.stat().st_size > 0
+    except Exception:  # pragma: no cover - PDF dị dạng
+        log.warning("Không cắt được lát xem trước cho %s", source.name)
+        return False
+
+
 def generate_preview(source: Path, document_id: int, files_root: Path) -> bool:
     """Convert source → previews/{id}.pdf. True = có file preview dùng được."""
     if source.suffix.lower() not in PREVIEWABLE_EXTENSIONS:
@@ -119,8 +164,14 @@ def _try_office_com(source: Path, target: Path) -> bool:
 
 
 def remove_preview(files_root: Path, document_id: int) -> None:
-    """Dọn file preview khi xóa tài liệu — thiếu cũng không sao."""
+    """Dọn file preview và MỌI lát đã cắt khi xóa tài liệu.
+
+    Bỏ sót lát thì tài liệu mới trùng id sẽ dùng lại lát của tài liệu cũ —
+    người dùng bấm trích dẫn và thấy nội dung của một tài liệu đã bị xóa.
+    """
     try:
         preview_path(files_root, document_id).unlink(missing_ok=True)
+        for stale in previews_dir(files_root).glob(f"{document_id}-p*.pdf"):
+            stale.unlink(missing_ok=True)
     except OSError:
         pass

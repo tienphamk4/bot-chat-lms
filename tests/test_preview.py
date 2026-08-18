@@ -48,3 +48,56 @@ class TestDispatch:
 
     def test_remove_preview_thieu_file_khong_sao(self, tmp_path):
         preview.remove_preview(tmp_path, 99)
+
+
+class TestLatXemTruoc:
+    """Popup trích dẫn chỉ cần vài trang, không cần cả tệp.
+
+    Tài liệu quảng bá 83 trang nặng 26,8 MB. Nhúng cả tệp vào iframe nghĩa là
+    mỗi lần bấm một trích dẫn máy chủ đẩy đi 26,8 MB để hiện MỘT trang; popup
+    trắng vài giây rồi mới hiện, người dùng đọc là "lỗi". Lát ba trang 0,46 MB.
+    """
+
+    def test_lay_mot_trang_moi_ben(self):
+        from ingest.preview import slice_range
+
+        assert slice_range(11, 83) == (10, 12)
+
+    def test_kep_o_dau_tai_lieu(self):
+        from ingest.preview import slice_range
+
+        assert slice_range(1, 83) == (1, 2)
+
+    def test_kep_o_cuoi_tai_lieu(self):
+        from ingest.preview import slice_range
+
+        assert slice_range(83, 83) == (82, 83)
+
+    def test_tai_lieu_mot_trang(self):
+        from ingest.preview import slice_range
+
+        assert slice_range(1, 1) == (1, 1)
+
+    def test_khong_biet_so_trang_thi_van_ra_khoang_hop_le(self):
+        from ingest.preview import slice_range
+
+        start, end = slice_range(5, 0)
+        assert start == 4 and end >= start
+
+    def test_ten_lat_gan_voi_khoang_trang(self):
+        from pathlib import Path
+
+        from ingest.preview import slice_path
+
+        got = slice_path(Path("/srv/files"), 56, 10, 12)
+        assert got.name == "56-p10-12.pdf"
+
+    def test_xoa_tai_lieu_don_luon_cac_lat(self):
+        import inspect
+
+        from ingest import preview
+
+        src = inspect.getsource(preview.remove_preview)
+        assert '-p*.pdf' in src, (
+            "bỏ sót lát thì tài liệu mới trùng id sẽ dùng lại lát của tài liệu cũ"
+        )
