@@ -465,11 +465,25 @@ function headers(json) {
   return h;
 }
 
-async function api(path, opts = {}) {
+async function api(path, opts = {}, retried = false) {
   const res = await fetch('/api/v1/admin' + path, { headers: headers(opts.body), ...opts });
-  if (res.status === 404 && !TOKEN && !path.includes('/assistants/')) {
+  // Endpoint quản trị cố ý trả 404 khi sai quyền để không lộ sự tồn tại của
+  // nó, nên 404 ở đây gần như luôn là "chưa có hoặc sai ADMIN_TOKEN" chứ
+  // không phải "không có dữ liệu".
+  //
+  // Phải hỏi lại cả khi ĐÃ có token: token lưu trong sessionStorage mà sai
+  // (gõ nhầm, hoặc token trên máy chủ đã xoay) thì điều kiện `!TOKEN` không
+  // bao giờ đúng nữa — trang im lặng hỏng suốt phiên, không còn đường nào
+  // nhập lại ngoài việc tự xóa sessionStorage. Xóa token hỏng rồi hỏi lại
+  // đúng MỘT lần, `retried` chặn vòng lặp vô tận khi người dùng bấm Hủy.
+  if (res.status === 404 && !retried && !path.includes('/assistants/')) {
+    if (TOKEN) { TOKEN = ''; sessionStorage.removeItem('docbot-admin-token'); }
     const t = prompt('Trang quản trị đang khóa. Nhập ADMIN_TOKEN:');
-    if (t) { TOKEN = t; sessionStorage.setItem('docbot-admin-token', t); return api(path, opts); }
+    if (t) {
+      TOKEN = t;
+      sessionStorage.setItem('docbot-admin-token', t);
+      return api(path, opts, true);
+    }
   }
   if (!res.ok) {
     let detail = res.status;
